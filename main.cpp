@@ -15,7 +15,7 @@
 #include <GLM/gtc/matrix_transform.hpp>
 
 // 粒子数
-const auto PARTICLE_COUNT{ 10000 };
+const auto PARTICLE_COUNT{ 100 }; // ノートPCでやるには10000重いので
 
 /// 点群データ作成
 /// @param[in] object 点群データを作成する対象のオブジェクト
@@ -182,6 +182,24 @@ auto main() -> int {
 	Object object(PARTICLE_COUNT);
 	generateParticles(object, 1.0f);
 
+	// 地面用のオブジェクトを用意
+	const auto GRID_SIZE = 20;
+	Object floorObject(GRID_SIZE * GRID_SIZE);
+
+	// 地面用の点群データを生成し転送
+	std::vector<Particle> floorParticles(GRID_SIZE* GRID_SIZE);
+	for (int i = 0; i < GRID_SIZE; i++) {
+		for (int j = 0; j < GRID_SIZE; j++) {
+			float x = (i - GRID_SIZE / 2) * 0.2f;
+			float z = (j - GRID_SIZE / 2) * 0.2f;
+			// 簡易的に y=0 にて初期化
+			floorParticles[i * GRID_SIZE + j].position = glm::vec4(x, 0.0f, z, 1.0f);
+		}
+	}
+	// VBO へデータ転送
+	glBindBuffer(GL_ARRAY_BUFFER, floorObject.vbo);
+	glBufferSubData(GL_ARRAY_BUFFER, 0, floorParticles.size() * sizeof(Particle), floorParticles.data());
+
 	// 粒子群の物理パラメータ
 	struct Physics {
 		// 重力
@@ -309,11 +327,22 @@ auto main() -> int {
 		// uniform 変数 mc に値を設定する
 		glUniformMatrix4fv(mcLoc, 1, GL_FALSE, glm::value_ptr(projection * view * model));
 
-		// 図形を指定
-		glBindVertexArray(object.vao);
+		// 床の描画
+		glUniform3fv(glGetUniformLocation(program, "floor_normal"), 1, glm::value_ptr(physics.floor_normal));
+		glUniform1f(glGetUniformLocation(program, "floor_height"), physics.floor_height);
+		GLint isFloorLocation = glGetUniformLocation(program, "is_floor");
 
-		// 図形を描画
+		// 粒子の描画
+		glUniform1i(isFloorLocation, 0); // 地面フラグ off
+		glBindVertexArray(object.vao);
 		glDrawArrays(GL_POINTS, 0, object.count);
+
+		// 地面の描画
+		glUniform1i(isFloorLocation, 1); // 地面フラグ on
+		glBindVertexArray(floorObject.vao);
+		glDrawArrays(GL_POINTS, 0, floorObject.count);
+
+		glBindVertexArray(0);
 
 		// OpenGL 周りのエラーがないかチェック
 		errorcheck();
