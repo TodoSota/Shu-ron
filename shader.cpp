@@ -129,7 +129,7 @@ auto createProgram(const std::string& vsrc, const std::string& fsrc, const std::
 	// 空のオブジェクトを作成する
 	const auto program{ glCreateProgram() };
 
-	// バーテックスシェーダーの作成解く見込みに成功すれば
+	// バーテックスシェーダーの作成と組み込みに成功すれば
 	if (createShader(program, vsrc, vmsg, GL_VERTEX_SHADER)) {
 		// フラグメントシェーダーがないかフラグメントシェーダーの作成と組み込みに成功すれば
 		if (fsrc.empty() || createShader(program, fsrc, fmsg, GL_FRAGMENT_SHADER)) {

@@ -15,7 +15,7 @@ Object::Object(GLsizei count, const void* data) :
 	// 頂点配列オブジェクトを結合
 	glBindVertexArray(vao);
 
-	// 頂点バッファオブジェクトを決都合して頂点配列オブジェクトに組み込む
+	// 頂点バッファオブジェクトを結合して頂点配列オブジェクトに組み込む
 	glBindBuffer(GL_ARRAY_BUFFER, vbo);
 
 	// 頂点バッファオブジェクトのメモリを確保し頂点位置データを転送
