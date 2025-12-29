@@ -131,6 +131,7 @@
     <ClCompile Include="ImGui\imgui_tables.cpp" />
     <ClCompile Include="ImGui\imgui_widgets.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="mpmObject.cpp" />
     <ClCompile Include="Object.cpp" />
     <ClCompile Include="shader.cpp" />
   </ItemGroup>
@@ -144,6 +145,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="errorcheck.h" />
+    <ClInclude Include="mpmObject.h" />
     <ClInclude Include="Object.h" />
     <ClInclude Include="shader.h" />
     <ClInclude Include="Window.h" />
