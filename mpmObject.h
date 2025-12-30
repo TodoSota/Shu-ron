@@ -13,7 +13,7 @@
 #include <GLM/glm.hpp>
 
 /// —±q‚Ì•¨——Ê
-struct Particle {
+struct mpmParticle {
 
 	alignas(16) glm::vec4 position;		// ˆÊ’u
 	alignas(16) glm::vec3 velocity;		// ‘¬“x

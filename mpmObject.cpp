@@ -19,17 +19,17 @@ mpmObject::mpmObject(GLsizei count, int gridSize) :
 	// バッファの設定
 	glBindVertexArray(vao);// vaoを結合
 	glBindBuffer(GL_ARRAY_BUFFER, vbo);// vboを結合しvaoに組み込む
-	glBufferData(GL_ARRAY_BUFFER, sizeof(Particle) * count, nullptr, GL_DYNAMIC_DRAW);// vboのメモリを確保し頂点位置データを転送
+	glBufferData(GL_ARRAY_BUFFER, sizeof(mpmParticle) * count, nullptr, GL_DYNAMIC_DRAW);// vboのメモリを確保し頂点位置データを転送
 
 	/// [in]変数 0 番に position
 	/// [in]変数 1 番に state(色分けで状態を表示)
 	 
 	// 結合されているvboの position を 0 番として設定
-	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(Particle), (void*)offsetof(Particle, position)) ;
+	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(mpmParticle), (void*)offsetof(mpmParticle, position)) ;
 	glEnableVertexAttribArray(0); // 0 番のvboを有効に
 
 	// 結合されているvboの state を 1 番として設定
-	glVertexAttribIPointer(1, 1, GL_INT, sizeof(Particle), (void*)offsetof(Particle, state)); // int なので 1 成分
+	glVertexAttribIPointer(1, 1, GL_INT, sizeof(mpmParticle), (void*)offsetof(mpmParticle, state)); // int なので 1 成分
 	glEnableVertexAttribArray(1); // 1 番のvboを有効に
 
 	// 3Dテクスチャ(MPMグリッド)の設定

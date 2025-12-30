@@ -4,7 +4,8 @@
 #include "Window.h"		// ウィンドウの生成から入力などの処理
 #include "errorcheck.h"	// OepnGL のエラーチェック
 #include "shader.h"		// シェーダー読み込み処理
-#include "Object.h"		// 図形処理関連の処理
+#include "Object.h"		// 描画のためのデータパッケージ
+#include "mpmObject.h"	// MPM 用の描画データパッケージ
 
 // 標準ライブラリ
 #include <iostream>
@@ -59,6 +60,55 @@ void generateParticles(const Object& object, float scale, bool sphere = true) {
 			position[i].position = { dist(engine), dist(engine),dist(engine), 1.0f };
 			position[i].velocity = { 0.0f, 0.0f, 0.0f };
 		}
+	}
+
+	// バッファオブジェクトの結合を解除。GPUへの諸々操作も終了したしターゲティングも終わりと宣言
+	glUnmapBuffer(GL_ARRAY_BUFFER);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+/// MPM 用の点群データ作成
+/// @param[in] object 点群データを作成する対象のオブジェクト
+/// @param[in] scale 点群データのスケール
+/// @param[in] sphere 球状に配置するなら true 、立方体状に配置するなら false
+void generateMPMParticles(const mpmObject& object, float scale, bool sphere = true) {
+	// 乱数生成器を初期化する
+	std::random_device seed_gen;
+	std::mt19937 engine(seed_gen());
+
+	// vboをバインドし頂点データをマップ
+	glBindBuffer(GL_ARRAY_BUFFER, object.vbo);
+	const auto position{ static_cast<mpmParticle*>(glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY)) };	// glMapBufferでGPUのものをCPUでいじりますと宣言
+
+	// 球状に配置する場合は、 0.0f～1.0f の範囲の一様乱数を生成
+	std::uniform_real_distribution<GLfloat> dist(0.0f, 1.0f);
+	// 立方体状に配置する場合 -0.5f * scale ～ 0.5f * scale の範囲の一様乱数を生成
+	std::uniform_real_distribution<GLfloat> distCube(-0.5f * scale, 0.5f * scale);
+
+	for (auto i = 0; i < object.count; i++) {
+		if (sphere) {
+			const float u{ dist(engine) };				// 経度（角度 t を決めるための乱数）用
+			const float v{ dist(engine) * 2.0f - 1.0f };// 緯度に対応。-1.0〜+1.0 の範囲を持たせる（Y軸方向の高さ）
+			const float w{ dist(engine) };				// 球の中心からどれだけ離れているか
+			const float r{ cbrt(w) * scale };			// 球の半径に比例する距離。cbrt で球全体に均等に粒子が分布させる
+			const float s{ sqrt(1.0f - v * v) * r };	// xy 平面上の距離（XとYの合成長さ）。z（高さ）とのバランスを取る
+			const float t{ u * 6.2831853f };			// 角度（0〜2π）を表すラジアン。経度方向の回転
+
+			// 粒子を球状に配置する
+			position[i].position = { s * cos(t), s * sin(t), r * v, 1.0f };
+		} else {
+			// 粒子を立方体状に配置
+			position[i].position = { distCube(engine), distCube(engine),distCube(engine), 1.0f };
+		}
+
+		// MPM 粒子の初期化 : mat3 は vec4 の3つ分
+		position[i].velocity = glm::vec3(0.0f);		// 速度
+		position[i].affineC = glm::mat3(0.0f);		// アフィン速度行列
+		position[i].deformation = glm::mat3(1.0f);	// 変形勾配:単位行列で初期化
+		position[i].alpha = 0.267765f;				// 降伏面の大きさ(硬化に影響)
+		position[i].q = 0.0f;						// 降伏面の更新に使用
+		position[i].vc = 0.0f;						// 体積の変化量
+		position[i].state = 1;						// 状態1:弾性変形
 	}
 
 	// バッファオブジェクトの結合を解除。GPUへの諸々操作も終了したしターゲティングも終わりと宣言
@@ -153,7 +203,6 @@ auto main() -> int {
 
 	// 粒子の処理を初期化するコンピュートシェーダーのプログラムオブジェクトを作成
 	const auto setup{ loadCompute("setup.comp") };
-
 	// プログラムオブジェクトの作成失敗なら
 	if (setup == 0) {
 		std::cerr << "Can not create setup shader." << std::endl;
@@ -162,7 +211,6 @@ auto main() -> int {
 
 	// 粒子の衝突を処理するコンピュートシェーダーのプログラムオブジェクトを作成
 	const auto collide{ loadCompute("collide.comp") };
-
 	// プログラムオブジェクトの作成失敗なら
 	if (collide == 0) {
 		std::cerr << "Can not create collide shader." << std::endl;
@@ -171,7 +219,6 @@ auto main() -> int {
 
 	// 粒子の位置を更新するコンピュートシェーダーのプログラムオブジェクトを作成
 	const auto update{ loadCompute("update.comp") };
-
 	// プログラムオブジェクトの作成失敗なら
 	if (update == 0) {
 		std::cerr << "Can not create update shader." << std::endl;
@@ -181,6 +228,11 @@ auto main() -> int {
 	// 図形を作成
 	Object object(PARTICLE_COUNT);
 	generateParticles(object, 1.0f);
+
+	// MPM シミュレーション領域を生成
+	const int N_GRID = 64; // グリッドの解像度
+	mpmObject mpmObj(PARTICLE_COUNT, N_GRID);
+	generateMPMParticles(mpmObj, 1.0f, false);	// false なので立方体
 
 	// 地面用のオブジェクトを用意
 	const auto GRID_SIZE = 20;
@@ -280,34 +332,34 @@ auto main() -> int {
 		window.update();
 
 		// シェーダーストレージバッファオブジェクトを 0 番の結合ポイントに結合する
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, object.vbo);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, object.vbo); // 通常
+		//glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mpmObj.vbo); // <MPM用>
 
-		// ユニフォームバッファオブジェクトを 1 番の結合ポイントに結合する
+		// ユニフォームバッファオブジェクトを 1 番に結合
 		glBindBufferBase(GL_UNIFORM_BUFFER, 1, ubo);
 
-		// 粒子の処理を初期化するコンピュートシェーダーを指定する
+		// <MPM用>3Dテクスチャを 0 番に結合
+		//* 置換で一気にアクティブにして
+		//*glBindImageTexture(0, mpmObj.gridTex, 0, GL_TRUE, 0, GL_READ_WRITE, GL_RGBA32F);
+		//*
+		
+
+		//
+		// 以下、粒子シミュレート分
+		// 
+		// 初期化のコンピュートシェーダー
 		glUseProgram(setup);
+		glDispatchCompute(object.count, 1, 1);// 計算を実行
+		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);// 書き込み完了待ち
 
-		// 計算を実行
-		glDispatchCompute(object.count, 1, 1);
-
-		// シェーダーストレージバッファオブジェクトへ書き込み完了を待つ
-		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-		// 粒子の衝突を処理するコンピュートシェーダーを指定
+		// 粒子の衝突のコンピュートシェーダー
 		glUseProgram(collide);
+		glDispatchCompute(object.count, 1, 1);// 計算を実行
+		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);// 書き込み完了待ち
 
-		// 計算を実行
-		glDispatchCompute(object.count, 1, 1);
-
-		// シェーダーストレージバッファオブジェクトへ書き込み完了を待つ
-		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-		// 粒子の位置を更新するコンピュートシェーダーを指定する
+		// 位置更新のコンピュートシェーダー
 		glUseProgram(update);
-
-		// 計算を実行
-		glDispatchCompute(object.count, 1, 1);
+		glDispatchCompute(object.count, 1, 1);// 計算を実行
 
 		// ウィンドウを消去(カラー/デプスバッファを初期状態に)
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -317,14 +369,11 @@ auto main() -> int {
 
 		// モデル変換行列を設定・ウィンドウ内のでマウスの動きから変換
 		const auto& model{ window.getModel(GLFW_MOUSE_BUTTON_LEFT) };
-
 		// ビュー変換行列を設定
 		const auto view{ glm::translate(glm::mat4(1.0f), glm::vec3(0.0f,0.0f,-3.0f)) };
-
 		// 投影変換行列を設定
 		const auto projection{ glm::perspective(glm::radians(60.0f), window.getAspect(), 1.0f, 10.0f) };
-
-		// uniform 変数 mc に値を設定する
+		// uniform 変数 mc に値を設定
 		glUniformMatrix4fv(mcLoc, 1, GL_FALSE, glm::value_ptr(projection * view * model));
 
 		// 床の描画
@@ -336,6 +385,13 @@ auto main() -> int {
 		glUniform1i(isFloorLocation, 0); // 地面フラグ off
 		glBindVertexArray(object.vao);
 		glDrawArrays(GL_POINTS, 0, object.count);
+
+		/*
+		// MPM 結果の描画
+		glUniform1i(isFloorLocation, 0); // 地面フラグ off
+		glBindVertexArray(mpmObj.vao);
+		glDrawArrays(GL_POINT, 0, mpmObj.count);
+		*/
 
 		// 地面の描画
 		glUniform1i(isFloorLocation, 1); // 地面フラグ on
