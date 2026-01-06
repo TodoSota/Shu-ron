@@ -333,15 +333,26 @@ auto main() -> int {
 
 		// シェーダーストレージバッファオブジェクトを 0 番の結合ポイントに結合する
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, object.vbo); // 通常
-		//glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mpmObj.vbo); // <MPM用>
+		//*glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mpmObj.vbo); // <MPM用>
 
 		// ユニフォームバッファオブジェクトを 1 番に結合
 		glBindBufferBase(GL_UNIFORM_BUFFER, 1, ubo);
+		
+		// 以下、MPMの計算部分 置換で一気にアクティブにして
+		
+		// <MPM用>3Dテクスチャを 0-3 番に結合
+		//*glBindImageTexture(0, mpmObj.gridTexX, 0, GL_TRUE, 0, GL_READ_WRITE, GL_R32UI);
+		//*glBindImageTexture(1, mpmObj.gridTexY, 0, GL_TRUE, 0, GL_READ_WRITE, GL_R32UI);
+		//*glBindImageTexture(2, mpmObj.gridTexZ, 0, GL_TRUE, 0, GL_READ_WRITE, GL_R32UI);
+		//*glBindImageTexture(3, mpmObj.gridTexA, 0, GL_TRUE, 0, GL_READ_WRITE, GL_R32UI);
+		
 
-		// <MPM用>3Dテクスチャを 0 番に結合
-		//* 置換で一気にアクティブにして
-		//*glBindImageTexture(0, mpmObj.gridTex, 0, GL_TRUE, 0, GL_READ_WRITE, GL_RGBA32F);
-		//*
+		// グリッドのリセット
+		//*glUseProgram();
+		// compファイルでの local_size が 8*8*8 なので 解像度/8 で送信
+		int numGroups = (mpmObj.gridSize + 7) / 8;
+		glDispatchCompute(numGroups, numGroups, numGroups);
+		glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 		
 
 		//

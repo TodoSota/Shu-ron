@@ -36,7 +36,7 @@ struct mpmObject {
 	const GLsizei count;	// 頂点数
 
 	// MPMグリッドのフィールド
-	const GLuint gridTex;	// 3DテクスチャID
+	GLuint gridTexX, gridTexY, gridTexZ, gridTexA;	// 3DテクスチャID | 生成して後から変更するので const はなし
 	const int gridSize;		// グリッドのサイズ(テクスチャの解像度)
 
 	/// コンストラクタ
@@ -48,4 +48,8 @@ struct mpmObject {
 	virtual ~mpmObject();											// デコンストラクタ
 	mpmObject& operator = (const mpmObject& mpmObject) = delete;	// 代入演算子は使用しない
 	mpmObject& operator=(mpmObject&& mpmObject) = default;			// ムーブ代入演算子はデフォルトを使用
+
+
 };
+
+auto createGridTex(GLuint& texID, int gridSize);

@@ -1,0 +1,32 @@
+#version 430 core
+
+// グリッドの3次元的にリセットするため 8*8*8 に立方体スレッドで
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+// 3Dテクスチャ
+layout(r32ui, binding = 0) uniform uimage3D gridIMX;	// 運動量 X
+layout(r32ui, binding = 0) uniform uimage3D gridIMY;	// 運動量 Y
+layout(r32ui, binding = 0) uniform uimage3D gridIMZ;	// 運動量 Z
+layout(r32ui, binding = 0) uniform uimage3D gridIMM;	// 質量 M
+
+void main() {
+	// スレッドの担当グリッド座標  (x, y, z)
+	ivec3 coords = ivec3(gl_GlobalInvocationId.xyz);
+
+	// テクスチャサイズ
+	ivec3 size = imageSize(gridIMX);
+
+	// 範囲外アクセス防止
+	if (coords.x >= size.x || coords.y >= size.y || coords.z >= size.z) {
+		return;
+	}
+
+	// 0.0f を uint のビット表現に変換し格納
+	uint zero = floatBitsToUint(0,0);
+
+	// グリッドを 0で初期化 (運動量, 質量 : 0)
+	imageStore(gridIMX, coords, uvec4(zero));
+	imageStore(gridIMY, coords, uvec4(zero));
+	imageStore(gridIMZ, coords, uvec4(zero));
+	imageStore(gridIMM, coords, uvec4(zero));
+}
