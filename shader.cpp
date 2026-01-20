@@ -5,6 +5,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <vector>
 
 /// シェーダーオブジェクトのコンパイル結果を表示
 /// 他から使用しないので static
@@ -15,7 +16,6 @@ static auto printShaderInfoLog(GLuint shader, const std::string& str) -> GLboole
 	// コンパイル結果を取得する
 	GLint status;
 	glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
-	if (status == GL_FALSE) std::cerr << "Compile Error in " << str << std::endl;
 
 	// シェーダーのコンパイル時のログの長さを取得
 	GLsizei bufSize;
@@ -30,7 +30,13 @@ static auto printShaderInfoLog(GLuint shader, const std::string& str) -> GLboole
 
 		// ログの内容を表示する
 		std::cerr << &infoLog << std::endl;
+
+		std::vector<char> log(bufSize);
+		glGetShaderInfoLog(shader, bufSize, nullptr, log.data());
+		std::cerr << log.data() << std::endl;
 	}
+
+	if (status == GL_FALSE) std::cerr << "Compile Error in " << str << std::endl;
 
 	// コンパイル結果を返す
 	return status;

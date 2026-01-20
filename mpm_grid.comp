@@ -1,0 +1,98 @@
+#version 430 core
+
+// 8*8*8 のスレッドグループでグリッド全体を走査
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+// テクスチャ 4枚
+layout(r32ui, binding = 0) uniform uimage3D gridIMX;
+layout(r32ui, binding = 1) uniform uimage3D gridIMY;
+layout(r32ui, binding = 2) uniform uimage3D gridIMZ;
+layout(r32ui, binding = 3) uniform uimage3D gridIMA;
+
+// MPMの粒子群の物理パラメータ
+layout(std140, binding = 1) uniform MPMPhysics {
+	// シミュレーション空間
+	vec3 gravity;		// 重力
+	float timestep;		// 時間間隔
+	float f_height;		// 地面の高さ
+	vec3 f_normal;		// 地面の法線
+	float f_restitution;// 地面の反発係数
+	float f_friction;	// 地面の摩擦係数
+	float dx;			// グリッドの間隔
+	float inv_dx;		// 間隔の逆数
+
+	// 粒子
+	float p_restitution;// 粒子の反発係数
+	float p_vol;		// 粒子の体積
+	float p_mu;			// 粒子のラメ係数
+	float p_lambda;		// 粒子のラメ係数
+	float p_mass;		// 粒子の質量
+	float p_radius;		// 粒子の半径
+	float p_overlap;	// 粒子の重なり
+};
+
+// ビット変換用のヘルパー関数
+float uintToFloat(uint val) { return uintBitsToFloat(val); }
+uint floatToUint(float val) { return floatBitsToUint(val); }
+
+void main() {
+	ivec3 coords = ivec3(gl_GlobalInvocationID.xyz);
+	ivec3 size = imageSize(gridIMX);
+
+	// 範囲外アクセス防止
+    if (coords.x >= size.x || coords.y >= size.y || coords.z >= size.z) return;
+
+	// 1. グリッドデータ読み込み
+	float m = uintToFloat(imageLoad(gridIMA, coords).x);
+	if (m <= 1e-7) return;	// 質量がほぼゼロなら処理スキップ
+
+	vec3 v = vec3(
+        uintToFloat(imageLoad(gridIMX, coords).x),
+        uintToFloat(imageLoad(gridIMY, coords).x),
+        uintToFloat(imageLoad(gridIMZ, coords).x)
+    );
+
+	// 2. 速度算出と外力(重力含む)の適用
+	v /= m;						// 運動量を質量で割る
+	v += gravity * timestep;	// 重力を適用
+
+	// 3. 境界条件・当たり判定
+	vec3 pos = (vec3(coords) + vec3(0.5)) * dx;	// 現在のセルの世界座標の計算
+
+	float dist = dot(pos, f_normal) - f_height;	// 床との判定・グリッドでの判定なので、ノードが床を貫通しているのかを見ている
+
+	// 床より下なら
+	if (dist < 0.0) {
+		float v_normal = dot(v, f_normal); // 法線方向の成分を取得
+
+		// 下向きに落下してるなら
+		if (v_normal < 0.0) {
+			vec3 vn = f_normal * v_normal;	// 法線方向の速度
+			vec3 vt = v - vn;				// 接線方向の速度
+
+			// 摩擦
+			float vt_len = length(vt);
+			if(vt_len > 1e-7){
+				float friction_factor = max(0.0, 1.0 - f_friction * abs(v_normal) / vt_len);
+				vt *= friction_factor;
+			}
+
+			// 速度の更新
+			v = vt - f_restitution * vn;
+		}
+	}
+
+
+	//
+	// 動的物体やその他当たり判定を行うならここ
+	// 摩擦の部分は使いまわせるかもなので、必要ならヘルパー関数にする
+	// SDF を使うなら、こちらでも dist を作成して判定できるハズ
+	//
+
+
+	// 4. 更新されたデータを戻す
+	// 質量は更新されていないので不要
+	imageStore(gridIMX, coords, uvec4(floatToUint(v.x * m)));
+    imageStore(gridIMY, coords, uvec4(floatToUint(v.y * m)));
+    imageStore(gridIMZ, coords, uvec4(floatToUint(v.z * m)));
+}

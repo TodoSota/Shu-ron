@@ -21,10 +21,11 @@ struct mpmParticle {
 	alignas(16) glm::mat3 deformation;	// 変形勾配
 
 	// 砂の塑性変形パラメーター
-	alignas(4) float alpha;		//降伏面の大きさ
-	alignas(4) float q;			//硬化状態
-	alignas(4) float vc;		//変化の際の体積変化
-	alignas(4) int state;		//状態(変化)
+	alignas(4) float alpha;	//降伏面の大きさ
+	alignas(4) float q;		//硬化状態
+	alignas(4) float vc;	//変化の際の体積変化
+	alignas(4) int state;	//状態(変化)
+	alignas(4) int scale;	//スケール(テクスチャへの書き込み用)
 
 };
 
@@ -51,5 +52,3 @@ struct mpmObject {
 
 
 };
-
-auto createGridTex(GLuint& texID, int gridSize);

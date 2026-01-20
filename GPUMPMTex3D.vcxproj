@@ -137,6 +137,11 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="collide.comp" />
+    <None Include="mpm_g2p.comp" />
+    <None Include="mpm_grid.comp" />
+    <None Include="mpm_move.comp" />
+    <None Include="mpm_p2g.comp" />
+    <None Include="mpm_setup.comp" />
     <None Include="packages.config" />
     <None Include="point.frag" />
     <None Include="point.vert" />

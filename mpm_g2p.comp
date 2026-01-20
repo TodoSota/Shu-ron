@@ -1,0 +1,207 @@
+#version 430 core
+
+// 1グループ 64スレッド
+layout(local_size_x = 64) in;
+
+// テクスチャ 4枚
+layout(r32ui, binding = 0) uniform uimage3D gridIMX;
+layout(r32ui, binding = 1) uniform uimage3D gridIMY;
+layout(r32ui, binding = 2) uniform uimage3D gridIMZ;
+layout(r32ui, binding = 3) uniform uimage3D gridIMA;
+
+// 粒子のデータ構造
+struct mpmParticle {
+	vec4 position;		// 位置
+	vec3 velocity;		// 速度
+	mat3 affineC;		//アフィン速度行列
+	mat3 deformation;	// 変形勾配
+
+	// 砂の塑性変形パラメーター
+	 float alpha;		//降伏面の大きさ
+	 float q;			//硬化状態
+	 float vc;			//変化の際の体積変化
+	 int state;			//状態(変化)
+	 int scale;			//スケール
+};
+
+layout(std430, binding = 0) buffer mpmBuffer { mpmParticle p[]; };
+
+// MPMの粒子群の物理パラメータ
+layout(std140, binding = 1) uniform MPMPhysics {
+	// シミュレーション空間
+	vec3 gravity;		// 重力
+	float timestep;		// 時間間隔
+	float f_height;		// 地面の高さ
+	vec3 f_normal;		// 地面の法線
+	float f_restitution;// 地面の反発係数
+	float f_friction;	// 地面の摩擦係数
+	float dx;			// グリッドの間隔
+	float inv_dx;		// 間隔の逆数
+
+	// 粒子
+	float p_restitution;// 粒子の反発係数
+	float p_vol;		// 粒子の体積
+	float p_mu;			// 粒子のラメ係数
+	float p_lambda;		// 粒子のラメ係数
+	float p_mass;		// 粒子の質量
+	float p_radius;		// 粒子の半径
+	float p_overlap;	// 粒子の重なり
+};
+
+// 固有値分解
+void jacobiEigen(inout mat3 S, out mat3 V) {
+    V = mat3(1.0);
+
+	// 実用上は 3-5 回で十分 (3 を 5 に変えても可)
+    for (int iter = 0; iter < 3; ++iter) {
+        for (int p = 0; p < 2; ++p)
+        for (int q = p + 1; q < 3; ++q) {
+
+            float app = S[p][p];
+            float aqq = S[q][q];
+            float apq = S[p][q];
+
+            if (abs(apq) < 1e-6) continue;
+
+            float phi = 0.5 * atan(2.0 * apq, aqq - app);
+            float c = cos(phi);
+            float s = sin(phi);
+
+            mat3 J = mat3(1.0);
+            J[p][p] =  c; J[p][q] = s;
+            J[q][p] = -s; J[q][q] = c;
+
+            S = transpose(J) * S * J;
+            V = V * J;
+        }
+    }
+}
+
+// 特異値分解
+void svd(mat3 F, out mat3 U, out mat3 Sigma, out mat3 V) {
+    mat3 S = transpose(F) * F;
+
+    jacobiEigen(S, V);
+
+    Sigma = mat3(0.0);
+	// ゼロ除算の恐れがあるので、微小な値を足す(エプシロン)
+    Sigma[0][0] = sqrt(max(S[0][0], 1e-6));
+    Sigma[1][1] = sqrt(max(S[1][1], 1e-6));
+    Sigma[2][2] = sqrt(max(S[2][2], 1e-6));
+
+    mat3 invSigma = mat3(0.0);
+    
+	invSigma[0][0] = 1.0 / Sigma[0][0];
+	invSigma[1][1] = 1.0 / Sigma[1][1];
+	invSigma[2][2] = 1.0 / Sigma[2][2];
+
+    U = F * V * invSigma;
+}
+
+void main() {
+	uint idx = gl_GlobalInvocationID.x;
+	if (idx >= p.length()) return;
+
+	if (timestep < 1e-6) { p[idx].position.y += 0.01; }
+
+	// 1. 座標と重みの計算
+	// 座標とインデックス
+	vec3 x = p[idx].position.xyz;
+	vec3 fx = x * inv_dx - 0.5;
+	ivec3 base = ivec3(floor(fx));
+	vec3 weight_dist = fx - vec3(base);
+
+	// 2次Bスプライン補間
+	vec3 w[3];
+	w[0] = 0.5 * pow( 1.5 - weight_dist, vec3(2.0));
+	w[1] = 0.75 - pow( weight_dist - 1.0, vec3(2.0));
+	w[2] = 0.5 * pow( weight_dist - 0.5, vec3(2.0));
+
+	// 2. グリッドからの速度・アフィン行列の回収
+	vec3 new_v = vec3(0.0);
+	mat3 new_C = mat3(0.0);
+
+	for (int i = 0; i < 3; i++) {
+		for (int j = 0; j < 3; j++) {
+			for (int k = 0; k < 3; k++) {
+				ivec3 coords = base + ivec3(i, j, k);
+				if (any(lessThan(coords, ivec3(0))) || any(greaterThanEqual(coords, ivec3(128)))) {
+					continue; // 範囲外のノードへの加算をスキップ
+				}
+				float weight = w[i].x * w[j].y * w[k].z;
+
+				float m = uintBitsToFloat(imageLoad(gridIMA, coords).x);
+				if (m < 1e-7) continue;
+
+				vec3 g_v = vec3(
+					uintBitsToFloat(imageLoad(gridIMX, coords).x),
+                    uintBitsToFloat(imageLoad(gridIMY, coords).x),
+                    uintBitsToFloat(imageLoad(gridIMZ, coords).x)
+				) / (p[idx].scale * m);
+
+				vec3 dpos = (vec3(i, j, k) - weight_dist) * dx;
+				new_v += weight * g_v;
+				new_C += 4.0 * inv_dx * weight * outerProduct(g_v, dpos);
+			}
+		}
+	}
+
+	// 3. 変形勾配 F の更新
+	mat3 F_new = (mat3(1.0) + timestep * new_C) * p[idx].deformation;
+
+	// 4. 塑性変形
+	mat3 U, sig, V;
+	svd(F_new, U, sig, V);
+
+	// ひずみ空間での処理
+	float epsilon[3];
+	epsilon[0] = log(max(sig[0][0], 1e-6));
+	epsilon[1] = log(max(sig[1][1], 1e-6));
+	epsilon[2] = log(max(sig[2][2], 1e-6));
+
+	float tr_e = epsilon[0] + epsilon[1] + epsilon[2] + p[idx].vc;
+	vec3 e_hat = vec3(epsilon[0], epsilon[1], epsilon[2]) - tr_e / 3.0;
+	float e_hat_norm = length(e_hat);
+
+	// 降伏関数にて判定
+	float delta_gamma = e_hat_norm + (3.0 * p_lambda + 2.0 * p_mu) / (2.0 * p_mu) * tr_e * p[idx].alpha;
+
+	vec3 new_epsilon;
+	vec3 epsilon_v = vec3(epsilon[0], epsilon[1], epsilon[2]);
+	// 変形の状態判定
+	if (e_hat_norm < 1e-8 || tr_e > 0.0) {
+		// 特になし
+		new_epsilon = vec3(0.0);
+		p[idx].state = 0;
+	} else if (delta_gamma <= 0.0) {
+		// 弾性域
+		new_epsilon = epsilon_v;
+		p[idx].state = 1;
+	} else {
+		// 塑性域
+		new_epsilon = epsilon_v - (delta_gamma / e_hat_norm) * e_hat;
+		p[idx].state = 2;
+	}
+
+	// 5. 硬化
+	p[idx].q += (p[idx].state == 2) ? delta_gamma : 0.0;
+	float phi = 35.0 + (9.0 * p[idx].q - 0.2) * exp(-3.0 * p[idx].q);
+	phi = radians(phi);
+	p[idx].alpha = sqrt(2.0/3.0) * (2.0 * sin(phi)) / (3.0 - sin(phi));
+
+	// 結果の書き戻し
+	mat3 sig_new = mat3(0.0);
+	sig_new[0][0] = exp(new_epsilon.x);
+	sig_new[1][1] = exp(new_epsilon.y);
+	sig_new[2][2] = exp(new_epsilon.z);
+
+	// ステータスの更新
+	mat3 F_after = U * sig_new * transpose(V);
+	float det_before = determinant(F_new);
+	float det_after = determinant(F_after);
+	p[idx].vc += -log(det_after) + log(det_before);
+	p[idx].deformation = F_after;
+	p[idx].velocity = new_v;
+	p[idx].affineC = new_C;
+
+}

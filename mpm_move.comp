@@ -1,0 +1,69 @@
+#version 430 core
+
+// 1グループ 64スレッド
+layout(local_size_x = 64) in;
+
+// 粒子のデータ構造
+struct mpmParticle {
+	vec4 position;		// 位置
+	vec3 velocity;		// 速度
+	mat3 affineC;		//アフィン速度行列
+	mat3 deformation;	// 変形勾配
+
+	// 砂の塑性変形パラメーター
+	 float alpha;		//降伏面の大きさ
+	 float q;			//硬化状態
+	 float vc;			//変化の際の体積変化
+	 int state;			//状態(変化)
+	 int scale;			//スケール
+};
+
+layout(std430, binding = 0) buffer mpmBuffer { mpmParticle p[]; };
+
+// MPMの粒子群の物理パラメータ
+layout(std140, binding = 1) uniform MPMPhysics {
+	// シミュレーション空間
+	vec3 gravity;		// 重力
+	float timestep;		// 時間間隔
+	float f_height;		// 地面の高さ
+	vec3 f_normal;		// 地面の法線
+	float f_restitution;// 地面の反発係数
+	float f_friction;	// 地面の摩擦係数
+	float dx;			// グリッドの間隔
+	float inv_dx;		// 間隔の逆数
+
+	// 粒子
+	float p_restitution;// 粒子の反発係数
+	float p_vol;		// 粒子の体積
+	float p_mu;			// 粒子のラメ係数
+	float p_lambda;		// 粒子のラメ係数
+	float p_mass;		// 粒子の質量
+	float p_radius;		// 粒子の半径
+	float p_overlap;	// 粒子の重なり
+};
+
+void main() {
+	uint idx = gl_GlobalInvocationID.x;
+	if (idx >= p.length()) return;
+
+	// 1. 位置の更新
+	vec3 v = p[idx].velocity;
+	vec3 pos = p[idx].position.xyz + v * timestep;
+
+	// 2. 境界条件
+	/*
+	// バウンディングボックスで簡易的に
+	float margin = dx * 2.0;
+    float grid_limit = (1.0 / inv_dx) * 126.0;	// 128^3 グリッドなので
+
+	// 各軸でのクランプ
+    if (pos.x < margin) { pos.x = margin; v.x = 0; }
+    if (pos.y < margin) { pos.y = margin; v.y = 0; }
+    if (pos.z < margin) { pos.z = margin; v.z = 0; }
+
+	// 天井や奥の壁などでも可能だけどひとまずこれで
+	*/
+
+	p[idx].position.xyz = pos;
+	p[idx].velocity = v;
+}

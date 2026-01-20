@@ -12,10 +12,10 @@ mpmObject::mpmObject(GLsizei count, int gridSize) :
 	// 頂点の数を保存
 	count{ count },
 	// テクスチャを作成
-	gridTexX{ []() {GLuint t; glGenTextures(1, &t); return t; }() },
-	gridTexY{ []() {GLuint t; glGenTextures(1, &t); return t; }() },
-	gridTexZ{ []() {GLuint t; glGenTextures(1, &t); return t; }() },
-	gridTexA{ []() {GLuint t; glGenTextures(1, &t); return t; }() },
+	gridTexX{ 0 },
+	gridTexY{ 0 },
+	gridTexZ{ 0 },
+	gridTexA{ 0 },
 	// グリッドサイズを保存
 	gridSize{ gridSize }
 {

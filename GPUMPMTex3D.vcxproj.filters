@@ -72,6 +72,21 @@
     <None Include="collide.comp">
       <Filter>コンピュートシェーダファイル</Filter>
     </None>
+    <None Include="mpm_setup.comp">
+      <Filter>コンピュートシェーダファイル</Filter>
+    </None>
+    <None Include="mpm_p2g.comp">
+      <Filter>コンピュートシェーダファイル</Filter>
+    </None>
+    <None Include="mpm_grid.comp">
+      <Filter>コンピュートシェーダファイル</Filter>
+    </None>
+    <None Include="mpm_g2p.comp">
+      <Filter>コンピュートシェーダファイル</Filter>
+    </None>
+    <None Include="mpm_move.comp">
+      <Filter>コンピュートシェーダファイル</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="errorcheck.h">
