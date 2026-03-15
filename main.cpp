@@ -83,7 +83,7 @@ void generateMPMParticles(const mpmObject& object, float scale, bool sphere = tr
 	// 球状に配置する場合は、 0.0f～1.0f の範囲の一様乱数を生成
 	std::uniform_real_distribution<GLfloat> dist(0.0f, 1.0f);
 	// 立方体状に配置する場合 0.1f * scale ～ 0.8f * scale の範囲の一様乱数を生成
-	std::uniform_real_distribution<GLfloat> distCube(0.1f * scale, 0.8f * scale);
+	std::uniform_real_distribution<GLfloat> distCube(0.2f * scale, 0.8f * scale);
 
 	for (auto i = 0; i < object.count; i++) {
 		if (sphere) {
@@ -95,21 +95,22 @@ void generateMPMParticles(const mpmObject& object, float scale, bool sphere = tr
 			const float t{ u * 6.2831853f };			// 角度（0〜2π）を表すラジアン。経度方向の回転
 
 			// 粒子を球状に配置する
-			position[i].position = { s * cos(t), s * sin(t), r * v, 1.0f };
+			position[i].position = { s * cos(t) + 0.5f, s * sin(t) + 0.5f, r * v + 0.5f, 1.0f };
 		} else {
 			// 粒子を立方体状に配置
 			position[i].position = { distCube(engine), distCube(engine),distCube(engine), 1.0f };
 		}
 
 		// MPM 粒子の初期化 : mat3 は vec4 の3つ分
-		position[i].velocity = glm::vec3(0.0f);		// 速度
-		position[i].affineC = glm::mat3(0.0f);		// アフィン速度行列
-		position[i].deformation = glm::mat3(1.0f);	// 変形勾配:単位行列で初期化
+		position[i].velocity = glm::vec4(0.0f);		// 速度
+		position[i].affineC = glm::mat4(0.0f);		// アフィン速度行列
+		position[i].deformation = glm::mat4(1.0f);	// 変形勾配:単位行列で初期化
 		position[i].alpha = 0.267765f;				// 降伏面の大きさ(硬化に影響)
 		position[i].q = 0.0f;						// 降伏面の更新に使用
 		position[i].vc = 0.0f;						// 体積の変化量
 		position[i].state = 1;						// 状態1:弾性変形
-		position[i].scale = 10000.0;				// スケール(グリッド書き込み時に値を拡大)
+		position[i].scale = 1;				// スケール(グリッド書き込み時に値を拡大)
+		position[i].padding[0] = position[i].padding[1] = position[i].padding[2] = 0;//調整
 	}
 
 	// バッファオブジェクトの結合を解除。GPUへの諸々操作も終了したしターゲティングも終わりと宣言
@@ -239,7 +240,7 @@ auto main() -> int {
 	generateMPMParticles(mpmObj, 1.0f, false);	// false なので立方体
 
 	// 地面用のオブジェクトを用意
-	const auto GRID_SIZE = 20;
+	const auto GRID_SIZE = 128;
 	Object floorObject(GRID_SIZE * GRID_SIZE);
 	// 地面用の点群データを生成し転送
 	std::vector<Particle> floorParticles(GRID_SIZE* GRID_SIZE);
@@ -273,8 +274,9 @@ auto main() -> int {
 		// シミュレーション空間
 		alignas(16) glm::vec3 gravity;		// 重力
 		alignas(4) GLfloat timestep;		// 時間間隔
-		alignas(4) GLfloat f_height;		// 地面の高さ
 		alignas(16) glm::vec3 f_normal;		// 地面の法線
+		alignas(4) GLfloat f_height;		// 地面の高さ
+		
 		alignas(4) GLfloat f_restitution;	// 地面の反発係数
 		alignas(4) GLfloat f_friction;		// 地面の摩擦係数
 		alignas(4) GLfloat dx;				// グリッドの間隔
@@ -282,12 +284,14 @@ auto main() -> int {
 
 		// 粒子
 		alignas(4) GLfloat p_restitution;	// 粒子の反発係数
-		alignas(4) GLfloat p_vol;		// 粒子の体積
-		alignas(4) GLfloat p_mu;		// 粒子のラメ係数
-		alignas(4) GLfloat p_lambda;	// 粒子のラメ係数
-		alignas(4) GLfloat p_mass;					// 粒子の質量
-		alignas(4) GLfloat p_radius;					// 粒子の半径
-		alignas(4) GLfloat p_overlap;					// 粒子の重なり
+		alignas(4) GLfloat p_vol;			// 粒子の体積
+		alignas(4) GLfloat p_mu;			// 粒子のラメ係数
+		alignas(4) GLfloat p_lambda;		// 粒子のラメ係数
+
+		alignas(4) GLfloat p_mass;			// 粒子の質量
+		alignas(4) GLfloat p_radius;		// 粒子の半径
+		alignas(4) GLfloat p_overlap;		// 粒子の重なり
+		alignas(4) GLfloat p_padding;		// 調整
 	};
 
 	// 各種材料の特性値とシミュレーションの設定
@@ -310,9 +314,9 @@ auto main() -> int {
 	MPMPhysics mpmphysics{
 		// シミュレーション空間
 		{0.0f, -9.8f, 0.0f},// 重力
-		1.0 / 60.0f,		// 時間間隔
-		-1.0f,				// 地面の高さ
+		1.0 / 10000.0f,		// 時間間隔
 		{0.0f, 1.0f, 0.0f},	// 地面の法線
+		0.1f,				// 地面の高さ
 		0.5f,				// 地面の反発係数
 		0.6f,				// 地面の摩擦係数
 		g_interval,			// グリッドの間隔
@@ -325,7 +329,8 @@ auto main() -> int {
 		E_s * nu_s / ((1.0f + nu_s) * (1.0f - 2.0f * nu_s)),// 粒子のラメ係数
 		(g_interval * 0.5f)* (g_interval * 0.5f)* (g_interval * 0.5f) * 400.0f,		// 粒子の質量
 		0.01f,												// 粒子の半径
-		0.0001f												// 粒子の重なり
+		0.0001f,											// 粒子の重なり
+		0													// 調整
 	};
 
 	// 粒子群の物理パラメータを格納するユニフォームバッファオブジェクト
@@ -368,27 +373,27 @@ auto main() -> int {
 		glUseProgram(mpmSetup);
 		int numGroups = (mpmObj.gridSize + 7) / 8;// compファイルでの local_size が 8*8*8 なので 解像度/8 で送信
 		glDispatchCompute(numGroups, numGroups, numGroups);
-		glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
 		// [mpm_p2g] P2G
 		glUseProgram(mpmP2G);
 		glDispatchCompute((mpmObj.count + 63) / 64, 1, 1);
-		glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
 		// [mpm_grid] グリッドでの計算
 		glUseProgram(mpmGrid);
 		glDispatchCompute(numGroups, numGroups, numGroups);
-		glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
 		// [mpm_g2p] G2P
 		glUseProgram(mpmG2P);
 		glDispatchCompute((mpmObj.count + 63) / 64, 1, 1);
-		glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
 		// [mpm_move] 粒子の移動
 		glUseProgram(mpmMove);
 		glDispatchCompute((mpmObj.count + 63) / 64, 1, 1);
-		glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 		
 
 		/*

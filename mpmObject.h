@@ -16,18 +16,21 @@
 struct mpmParticle {
 
 	alignas(16) glm::vec4 position;		// 位置
-	alignas(16) glm::vec3 velocity;		// 速度
-	alignas(16) glm::mat3 affineC;		//アフィン速度行列
-	alignas(16) glm::mat3 deformation;	// 変形勾配
+	alignas(16) glm::vec4 velocity;		// 速度 (内部的には vec3 分を使用)
+	alignas(16) glm::mat4 affineC;		//アフィン速度行列 (内部的には mat3 分を使用)
+	alignas(16) glm::mat4 deformation;	// 変形勾配 (内部的には mat3 分を使用)
 
 	// 砂の塑性変形パラメーター
 	alignas(4) float alpha;	//降伏面の大きさ
 	alignas(4) float q;		//硬化状態
 	alignas(4) float vc;	//変化の際の体積変化
 	alignas(4) int state;	//状態(変化)
-	alignas(4) int scale;	//スケール(テクスチャへの書き込み用)
-
+	alignas(16) int scale;	//スケール(テクスチャへの書き込み用)
+	alignas(4) int padding[3]; // 調整用
 };
+
+// 念のためサイズが16の倍数か確認
+static_assert(sizeof(mpmParticle) % 16 == 0, "Struct size must be a multiple of 16");
 
 /// 頂点配列オブジェクト
 struct mpmObject {
