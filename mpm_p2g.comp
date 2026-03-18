@@ -154,8 +154,8 @@ void main() {
 	mat3 F = mat3(p[idx].deformation);
 	mat3 C = mat3(p[idx].affineC);
 
-	vec3 fx = x * inv_dx - 0.5;		// グリッドでの座標に変換 + 0.5 で座標1つ分後退して記録(探索ループにて使用)
-	ivec3 base = ivec3(floor(fx));	// ボクセルでの基準となる座標
+	vec3 fx = x * inv_dx;
+	ivec3 base = ivec3(floor(fx - 0.5));
 	vec3 weight_dist = fx - vec3(base);
 
 	// 2次Bスプライン補間
@@ -187,7 +187,7 @@ void main() {
 			for (int k=0; k<3; k++) {
 				ivec3 offset = ivec3(i, j, k);
 				ivec3 node_coords = base + offset;	// 今回の書き込み先
-				if (any(lessThan(node_coords, ivec3(0))) || any(greaterThanEqual(node_coords, ivec3(128)))) {
+				if (any(lessThan(node_coords, ivec3(0))) || any(greaterThanEqual(node_coords, imageSize(gridIMX)))) {
 					continue; // 範囲外のノードへの加算をスキップ
 				}
 				vec3 dpos = ( (vec3(offset) - weight_dist) * dx);

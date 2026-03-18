@@ -16,7 +16,8 @@
 #include <GLM/gtc/matrix_transform.hpp>
 
 // 粒子数
-const auto PARTICLE_COUNT{ 10000 }; // ノートPCでやるには10000重いので
+const auto PARTICLE_COUNT{ 1000 }; // ノートPCでやるには10000重いので
+const float worldScale = 1.0f;
 
 /// 点群データ作成
 /// @param[in] object 点群データを作成する対象のオブジェクト
@@ -82,8 +83,8 @@ void generateMPMParticles(const mpmObject& object, float scale, bool sphere = tr
 
 	// 球状に配置する場合は、 0.0f～1.0f の範囲の一様乱数を生成
 	std::uniform_real_distribution<GLfloat> dist(0.0f, 1.0f);
-	// 立方体状に配置する場合 0.1f * scale ～ 0.8f * scale の範囲の一様乱数を生成
-	std::uniform_real_distribution<GLfloat> distCube(0.2f * scale, 0.8f * scale);
+	// 立方体状に配置する場合 0.4f * scale ～ 0.6f * scale の範囲の一様乱数を生成
+	std::uniform_real_distribution<GLfloat> distCube(0.4f * scale, 0.6f * scale);
 
 	for (auto i = 0; i < object.count; i++) {
 		if (sphere) {
@@ -109,7 +110,7 @@ void generateMPMParticles(const mpmObject& object, float scale, bool sphere = tr
 		position[i].q = 0.0f;						// 降伏面の更新に使用
 		position[i].vc = 0.0f;						// 体積の変化量
 		position[i].state = 1;						// 状態1:弾性変形
-		position[i].scale = 1;				// スケール(グリッド書き込み時に値を拡大)
+		position[i].scale = worldScale;				// スケール(グリッド書き込み時に値を拡大)
 		position[i].padding[0] = position[i].padding[1] = position[i].padding[2] = 0;//調整
 	}
 
@@ -200,8 +201,8 @@ auto main() -> int {
 		return EXIT_FAILURE;
 	}
 
-	// uniform 変数 mc の場所を取得
-	const auto mcLoc{ glGetUniformLocation(program, "mc") };
+	// uniform 変数の設定
+	const auto mcLoc{ glGetUniformLocation(program, "mc") };	// mc の場所を取得
 
 	/* 既存の簡易シミュレーション
 	// 粒子の処理を初期化するコンピュートシェーダーのプログラムオブジェクトを作成
@@ -240,7 +241,7 @@ auto main() -> int {
 	generateMPMParticles(mpmObj, 1.0f, false);	// false なので立方体
 
 	// 地面用のオブジェクトを用意
-	const auto GRID_SIZE = 128;
+	const auto GRID_SIZE = 20;
 	Object floorObject(GRID_SIZE * GRID_SIZE);
 	// 地面用の点群データを生成し転送
 	std::vector<Particle> floorParticles(GRID_SIZE* GRID_SIZE);
@@ -297,7 +298,7 @@ auto main() -> int {
 	// 各種材料の特性値とシミュレーションの設定
 	const float E_s = 3.537e5f;	// ヤング率
 	const float nu_s = 0.3f;	// ポアソン比
-	const float g_interval = 1.0 / (float)GRID_SIZE;	// グリッドの間隔
+	const float g_interval = worldScale / (float)N_GRID;	// グリッドの間隔
 
 	Physics physics{
 		{0.0f, -9.8f, 0.0f},//重力
@@ -314,9 +315,9 @@ auto main() -> int {
 	MPMPhysics mpmphysics{
 		// シミュレーション空間
 		{0.0f, -9.8f, 0.0f},// 重力
-		1.0 / 10000.0f,		// 時間間隔
+		1.0 / 1000.0f,		// 時間間隔
 		{0.0f, 1.0f, 0.0f},	// 地面の法線
-		0.1f,				// 地面の高さ
+		0.0f,				// 地面の高さ
 		0.5f,				// 地面の反発係数
 		0.6f,				// 地面の摩擦係数
 		g_interval,			// グリッドの間隔
@@ -373,27 +374,27 @@ auto main() -> int {
 		glUseProgram(mpmSetup);
 		int numGroups = (mpmObj.gridSize + 7) / 8;// compファイルでの local_size が 8*8*8 なので 解像度/8 で送信
 		glDispatchCompute(numGroups, numGroups, numGroups);
-		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+		glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
 		// [mpm_p2g] P2G
 		glUseProgram(mpmP2G);
 		glDispatchCompute((mpmObj.count + 63) / 64, 1, 1);
-		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+		glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
 		// [mpm_grid] グリッドでの計算
 		glUseProgram(mpmGrid);
 		glDispatchCompute(numGroups, numGroups, numGroups);
-		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+		glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
 		// [mpm_g2p] G2P
 		glUseProgram(mpmG2P);
 		glDispatchCompute((mpmObj.count + 63) / 64, 1, 1);
-		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+		glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
 		// [mpm_move] 粒子の移動
 		glUseProgram(mpmMove);
 		glDispatchCompute((mpmObj.count + 63) / 64, 1, 1);
-		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+		glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 		
 
 		/*
@@ -430,8 +431,8 @@ auto main() -> int {
 		glUniformMatrix4fv(mcLoc, 1, GL_FALSE, glm::value_ptr(projection * view * model));
 
 		// 床の描画
-		glUniform3fv(glGetUniformLocation(program, "floor_normal"), 1, glm::value_ptr(physics.floor_normal));
-		glUniform1f(glGetUniformLocation(program, "floor_height"), physics.floor_height);
+		glUniform3fv(glGetUniformLocation(program, "floor_normal"), 1, glm::value_ptr(mpmphysics.f_normal));
+		glUniform1f(glGetUniformLocation(program, "floor_height"), mpmphysics.f_height);
 		GLint isFloorLocation = glGetUniformLocation(program, "is_floor");
 
 		/*
@@ -469,7 +470,7 @@ auto main() -> int {
 		ImGui::SliderFloat("Floor Restitution", &mpmphysics.f_restitution, 0.0f, 1.0f);
 		ImGui::SliderFloat("Floor Friction", &mpmphysics.f_friction, 0.0f, 1.0f);
 		ImGui::SliderFloat("dx", &mpmphysics.dx, 0.0f, 1.0f);
-		ImGui::SliderFloat("dx", &mpmphysics.inv_dx, 0.0f, 1.0f);
+		ImGui::SliderFloat("inv_dx", &mpmphysics.inv_dx, 0.0f, N_GRID*2);
 		ImGui::SliderFloat("Particle Restitution", &mpmphysics.p_restitution, 0.0f, 1.0f);
 		ImGui::SliderFloat("Particle vol", &mpmphysics.p_vol, 0.0f, 1.0f);
 		//ImGui::SliderFloat("Particle mu", &mpmphysics.p_mu, 0.0f, 1.0f);

@@ -111,8 +111,8 @@ void main() {
 	// 1. 座標と重みの計算
 	// 座標とインデックス
 	vec3 x = p[idx].position.xyz;
-	vec3 fx = x * inv_dx - 0.5;
-	ivec3 base = ivec3(floor(fx));
+	vec3 fx = x * inv_dx;
+	ivec3 base = ivec3(floor(fx - 0.5));
 	vec3 weight_dist = fx - vec3(base);
 
 	// 2次Bスプライン補間
@@ -129,7 +129,7 @@ void main() {
 		for (int j = 0; j < 3; j++) {
 			for (int k = 0; k < 3; k++) {
 				ivec3 coords = base + ivec3(i, j, k);
-				if (any(lessThan(coords, ivec3(0))) || any(greaterThanEqual(coords, ivec3(128)))) {
+				if (any(lessThan(coords, ivec3(0))) || any(greaterThanEqual(coords, imageSize(gridIMX)))) {
 					continue; // 範囲外のノードへの加算をスキップ
 				}
 				float weight = w[i].x * w[j].y * w[k].z;
