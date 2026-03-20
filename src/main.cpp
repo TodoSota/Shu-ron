@@ -1,11 +1,11 @@
 ﻿// Windowsの OpenGL ライブラリをリンクする
 #pragma comment(lib, "opengl32.lib")
 
-#include "Window.h"		// ウィンドウの生成から入力などの処理
-#include "errorcheck.h"	// OepnGL のエラーチェック
-#include "shader.h"		// シェーダー読み込み処理
-#include "Object.h"		// 描画のためのデータパッケージ
-#include "mpmObject.h"	// MPM 用の描画データパッケージ
+#include "core/Window.h"		// ウィンドウの生成から入力などの処理
+#include "core/errorcheck.h"	// OepnGL のエラーチェック
+#include "core/shader.h"		// シェーダー読み込み処理
+#include "core/Object.h"		// 描画のためのデータパッケージ
+#include "mpm/mpmObject.h"	// MPM 用の描画データパッケージ
 
 // 標準ライブラリ
 #include <iostream>
@@ -194,7 +194,7 @@ auto main() -> int {
 
 	// 1. プログラムオブジェクトのロード
 	// プログラムオブジェクトの作成
-	const auto program{ loadProgram("point.vert", "point.frag") };
+	const auto program{ loadProgram("src/render/point.vert", "src/render/point.frag") };
 	// プログラムオブジェクトの作成失敗
 	if (program == 0) {
 		std::cerr << "Can not create program object" << std::endl;
@@ -219,11 +219,11 @@ auto main() -> int {
 	*/
 	
 	// MPM シミュレーション
-	const auto mpmSetup{ loadCompute("mpm_setup.comp") };
-	const auto mpmP2G{ loadCompute("mpm_p2g.comp") };
-	const auto mpmGrid{ loadCompute("mpm_grid.comp") };
-	const auto mpmG2P{ loadCompute("mpm_g2p.comp") };
-	const auto mpmMove{ loadCompute("mpm_move.comp") };
+	const auto mpmSetup{ loadCompute("src/mpm/shaders/mpm_setup.comp") };
+	const auto mpmP2G{ loadCompute("src/mpm/shaders/mpm_p2g.comp") };
+	const auto mpmGrid{ loadCompute("src/mpm/shaders/mpm_grid.comp") };
+	const auto mpmG2P{ loadCompute("src/mpm/shaders/mpm_g2p.comp") };
+	const auto mpmMove{ loadCompute("src/mpm/shaders/mpm_move.comp") };
 	// プログラムオブジェクトの作成失敗なら
 	if (mpmSetup == 0 || mpmP2G == 0 || mpmGrid == 0 || mpmG2P == 0 || mpmMove == 0) {
 		std::cerr << "Can not create mpm simulator shader." << std::endl;

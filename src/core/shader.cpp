@@ -208,7 +208,7 @@ auto loadProgram(const std::string& vert, const std::string& frag) -> GLuint {
 		if (fsrc.empty()) return 0;
 	}
 
-	// 両方のソースファイルを読み込めたらぺうろグラムオブジェクトを作成する
+	// 両方のソースファイルを読み込めたらプログラムオブジェクトを作成する
 	return createProgram(vsrc, fsrc, vert, frag);
 }
 
