@@ -50,6 +50,9 @@ class Window
 	// マウスホイールの回転量
 	glm::dvec2 scroll{ 0.0, 0.0 };
 
+	// デバックカラー表示フラグ
+	bool useDebugColor{ false };
+
 	/// ウィンドウサイズ変更時の処理
 	/// @param[in] window サイズ変更の対象のウィンドウの識別子
 	/// @param[in] width サイズ変更の対象のウィンドウの幅
@@ -133,6 +136,22 @@ class Window
 		instance->scroll += glm::dvec2{ x, y };
 	}
 
+	/// キーボード操作時の処理
+	/// @note glfwSetKeyCallback() で登録するコールバック関数
+	static void key(GLFWwindow* window, int key, int scancode, int action, int mods) {
+#if defined(IMGUI_VERSION)
+		// ImGui がキーボードを使うときは Window クラスのキー入力を無視
+		if (ImGui::GetIO().WantCaptureKeyboard) return;
+#endif
+		const auto instance{ static_cast<Window*>(glfwGetWindowUserPointer(window)) };
+		if (instance == nullptr) return;
+
+		// スペースキーが「押された瞬間 (GLFW_PRESS)」のみ反応させる
+		if (key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
+			instance->useDebugColor = !(instance->useDebugColor); // フラグを反転
+		}
+	}
+
 public:
 	/// コンストラクタ
 	/// @param[in] width ウィンドウの幅
@@ -166,6 +185,9 @@ public:
 
 		// マウスボタンの操作時に呼び出す処理を登録する
 		glfwSetMouseButtonCallback(window, mouse);
+
+		// キーボードの操作時に呼び出す処理を登録する
+		glfwSetKeyCallback(window, key);
 
 		// 各種の状態の復帰処理を行う
 		reset();
@@ -223,7 +245,7 @@ public:
 		if (length == 0.0) return;
 
 		// マウスの移動方向と直行するベクトルを回転軸
-		const auto axis{ glm::normalize(glm::dvec3(-dx, dy, 0.0)) };
+		const auto axis{ glm::normalize(glm::dvec3(-dy, dx, 0.0)) };
 
 		// マウスの移動量を回転角とした回転を現在の回転と合成
 		trackball = glm::angleAxis(length * M_PI, axis) * rotation[button];
@@ -253,6 +275,16 @@ public:
 	const auto& getSize() const {
 		// ウィンドウのサイズを返す
 		return size;
+	}
+
+	/// デバッグカラー表示フラグを取り出す
+	bool getUseDebugColor() const {
+		return useDebugColor;
+	}
+
+	/// ImGui等から強制的にフラグを書き換える用
+	void setUseDebugColor(bool flag) {
+		useDebugColor = flag;
 	}
 
 	/// 描画の継続判定

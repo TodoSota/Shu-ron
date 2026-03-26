@@ -16,7 +16,7 @@
 #include <GLM/gtc/matrix_transform.hpp>
 
 // 粒子数
-const auto PARTICLE_COUNT{ 1000 }; // ノートPCでやるには10000重いので
+const auto PARTICLE_COUNT{ 100000 }; // ノートPCでやるには10000重いので
 const float worldScale = 1.0f;
 
 /// 点群データ作成
@@ -53,7 +53,7 @@ void generateParticles(const Object& object, float scale, bool sphere = true) {
 	}
 	else {
 		// 立方体状に配置する場合 -0.5f * scale ～ 0.5f * scale の範囲の一様乱数を生成
-		std::uniform_real_distribution<GLfloat> dist(-0.5f * scale, 0.5f * scale);
+		std::uniform_real_distribution<GLfloat> dist(-1.0f * scale, 1.0f * scale);
 
 		// 粒子の初期位置を決める
 		for (auto i = 0; i < object.count; i++) {
@@ -349,6 +349,10 @@ auto main() -> int {
 	glPointSize(static_cast<GLfloat>(window.getSize().y * 0.01));
 	glEnable(GL_POINT_SMOOTH);
 
+	// デバッグに用いる変数
+	bool useDebugColor = false;         // デバッグカラーのON/OFFフラグ
+	bool spacePressedLastFrame = false; // 1フレーム前のキー状態（押しっぱなし判定用）
+
 	// ウィンドウ起動中
 	while (window) {
 		// 更新処理を行う
@@ -444,6 +448,7 @@ auto main() -> int {
 		
 		// MPM 結果の描画
 		glUniform1i(isFloorLocation, 0); // 地面フラグ off
+		glUniform1i(glGetUniformLocation(program, "use_debug_color"), window.getUseDebugColor() ? 1 : 0); // デバッグモード起動中かどうか
 		glBindVertexArray(mpmObj.vao);
 		glDrawArrays(GL_POINTS, 0, mpmObj.count);
 		
@@ -460,6 +465,10 @@ auto main() -> int {
 
 #if defined(IMGUI_VERSION)
 		ImGui::Begin("Simulation Control");
+
+		// 現在のFPSと1フレームあたりの処理時間を表示
+		ImGui::Text("FPS: %.1f (%.3f ms/frame)", ImGui::GetIO().Framerate, 1000.0f / ImGui::GetIO().Framerate);
+		ImGui::Separator();
 
 		// シミュレーションパラメータの表示と編集
 		ImGui::Text("Physics Parameters:");
@@ -478,6 +487,12 @@ auto main() -> int {
 		ImGui::SliderFloat("Prticle Mass", &mpmphysics.p_mass, 0.1f, 10.0f);
 		ImGui::SliderFloat("Particle Radius", &mpmphysics.p_radius, 0.01f, 1.0f);
 		ImGui::SliderFloat("Particle Overlap", &mpmphysics.p_overlap, 0.0f, 0.01f);
+
+		ImGui::Separator(); // デバック範囲のため区切り線
+		bool debugFlag = window.getUseDebugColor();
+		if (ImGui::Checkbox("Debug Color Mode (Space key)", &debugFlag)) {
+			window.setUseDebugColor(debugFlag);
+		}
 		
 
 		// 「リスタート」ボタン

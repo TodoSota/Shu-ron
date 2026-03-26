@@ -190,8 +190,15 @@ void main() {
 	}
 
 	// 5. çdâª
-	p[idx].q += (p[idx].state == 2) ? delta_gamma : 0.0;
-	float phi = 35.0 + (9.0 * p[idx].q - 0.2) * exp(-3.0 * p[idx].q);
+	float delta_q = 0.0;
+	if (p[idx].state == 0) {
+		delta_q = length(epsilon_v);
+	} else if (p[idx].state == 2) {
+		delta_q = delta_gamma;
+	}
+	p[idx].q += delta_q;
+
+	float phi = 35.0 + (9.0 * p[idx].q - 3.0) * exp(-0.2 * p[idx].q);
 	phi = radians(phi);
 	p[idx].alpha = sqrt(2.0/3.0) * (2.0 * sin(phi)) / (3.0 - sin(phi));
 
