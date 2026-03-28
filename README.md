@@ -8,7 +8,7 @@ GPU上で動作するMPM（Material Point Method）による土砂シミュレ�
 ## ■ デモ
 ※ 粒子の落下・堆積挙動をリアルタイムでシミュレーション
 
-![demo](media/demo.gif)
+![demo1](media/demo1.gif)
 
 ---
 
