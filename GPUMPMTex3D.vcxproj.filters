@@ -21,16 +21,16 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="main.cpp">
+    <ClCompile Include="src\main.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
-    <ClCompile Include="errorcheck.cpp">
+    <ClCompile Include="src\core\errorcheck.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
-    <ClCompile Include="Object.cpp">
+    <ClCompile Include="src\core\Object.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
-    <ClCompile Include="shader.cpp">
+    <ClCompile Include="src\core\shader.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
     <ClCompile Include="ImGui\imgui.cpp">
@@ -51,36 +51,57 @@
     <ClCompile Include="ImGui\imgui_widgets.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
+    <ClCompile Include="src\mpm\mpmObject.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
-    <None Include="point.frag">
+    <None Include="src\render\point.frag">
       <Filter>シェーダーファイル</Filter>
     </None>
-    <None Include="point.vert">
+    <None Include="src\render\point.vert">
       <Filter>シェーダーファイル</Filter>
     </None>
-    <None Include="setup.comp">
+    <None Include="legacy\setup.comp">
       <Filter>コンピュートシェーダファイル</Filter>
     </None>
-    <None Include="update.comp">
+    <None Include="legacy\update.comp">
       <Filter>コンピュートシェーダファイル</Filter>
     </None>
-    <None Include="collide.comp">
+    <None Include="legacy\collide.comp">
+      <Filter>コンピュートシェーダファイル</Filter>
+    </None>
+    <None Include="src\mpm\shaders\mpm_setup.comp">
+      <Filter>コンピュートシェーダファイル</Filter>
+    </None>
+    <None Include="src\mpm\shaders\mpm_p2g.comp">
+      <Filter>コンピュートシェーダファイル</Filter>
+    </None>
+    <None Include="src\mpm\shaders\mpm_grid.comp">
+      <Filter>コンピュートシェーダファイル</Filter>
+    </None>
+    <None Include="src\mpm\shaders\mpm_g2p.comp">
+      <Filter>コンピュートシェーダファイル</Filter>
+    </None>
+    <None Include="src\mpm\shaders\mpm_move.comp">
       <Filter>コンピュートシェーダファイル</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="errorcheck.h">
+    <ClInclude Include="src\core\errorcheck.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
-    <ClInclude Include="Window.h">
+    <ClInclude Include="src\core\Window.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
-    <ClInclude Include="Object.h">
+    <ClInclude Include="src\core\Object.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
-    <ClInclude Include="shader.h">
+    <ClInclude Include="src\core\shader.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mpm\mpmObject.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
   </ItemGroup>

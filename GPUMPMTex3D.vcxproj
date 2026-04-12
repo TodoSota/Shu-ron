@@ -123,30 +123,37 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="errorcheck.cpp" />
+    <ClCompile Include="src\core\errorcheck.cpp" />
     <ClCompile Include="ImGui\imgui.cpp" />
     <ClCompile Include="ImGui\imgui_draw.cpp" />
     <ClCompile Include="ImGui\imgui_impl_glfw.cpp" />
     <ClCompile Include="ImGui\imgui_impl_opengl3.cpp" />
     <ClCompile Include="ImGui\imgui_tables.cpp" />
     <ClCompile Include="ImGui\imgui_widgets.cpp" />
-    <ClCompile Include="main.cpp" />
-    <ClCompile Include="Object.cpp" />
-    <ClCompile Include="shader.cpp" />
+    <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\mpm\mpmObject.cpp" />
+    <ClCompile Include="src\core\Object.cpp" />
+    <ClCompile Include="src\core\shader.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="collide.comp" />
+    <None Include="legacy\collide.comp" />
+    <None Include="src\mpm\shaders\mpm_g2p.comp" />
+    <None Include="src\mpm\shaders\mpm_grid.comp" />
+    <None Include="src\mpm\shaders\mpm_move.comp" />
+    <None Include="src\mpm\shaders\mpm_p2g.comp" />
+    <None Include="src\mpm\shaders\mpm_setup.comp" />
     <None Include="packages.config" />
-    <None Include="point.frag" />
-    <None Include="point.vert" />
-    <None Include="setup.comp" />
-    <None Include="update.comp" />
+    <None Include="src\render\point.frag" />
+    <None Include="src\render\point.vert" />
+    <None Include="legacy\setup.comp" />
+    <None Include="legacy\update.comp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="errorcheck.h" />
-    <ClInclude Include="Object.h" />
-    <ClInclude Include="shader.h" />
-    <ClInclude Include="Window.h" />
+    <ClInclude Include="src\core\errorcheck.h" />
+    <ClInclude Include="src\mpm\mpmObject.h" />
+    <ClInclude Include="src\core\Object.h" />
+    <ClInclude Include="src\core\shader.h" />
+    <ClInclude Include="src\core\Window.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
