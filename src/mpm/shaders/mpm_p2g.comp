@@ -52,6 +52,9 @@ layout(std140, binding = 1) uniform MPMPhysics {
 	float p_radius;		// 粒子の半径
 	float p_overlap;	// 粒子の重なり
 	float p_padding;	// 調整
+
+	// 障害物
+	vec4 obstacle_sphere; // 静的物体の仮説
 };
 
 // AtomicAdd を Image にて行う

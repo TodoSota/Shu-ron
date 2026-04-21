@@ -32,6 +32,7 @@ layout(std430, binding = 0) buffer mpmBuffer {
 
 // フラグメントシェーダーへ送る状態変数 (補間しないようにflatを指定)
 out flat int v_state;
+out flat int v_material;
 
 void main(){
 	vec4 pos = position;
@@ -42,6 +43,9 @@ void main(){
 	} else {
 		v_state = p[gl_VertexID].state;
 	}
+
+	// 石と土の色フラグを送る
+	v_material = p[gl_VertexID].padding[0];
 
 	// 頂点の位置をクリッピング座標系に変換
 	gl_Position = mc * pos;

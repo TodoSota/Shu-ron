@@ -8,6 +8,7 @@ uniform bool use_debug_color;	// デバッグモードか
 
 // バーテックスシェーダーから受け取る状態変数
 in flat int v_state;
+in flat int v_material;
 
 void main(){
 	if(is_floor) {
@@ -32,8 +33,11 @@ void main(){
 			}
 		} else {
 			// 通常色モード
-			// こげ茶色
-			color = vec4(0.32f, 0.18f, 0.1f, 1.0f);
+			if (v_material == 1) {
+				color = vec4(0.5f, 0.5f, 0.5f, 1.0f); // 石のグレー
+			} else {
+				color = vec4(0.32f, 0.18f, 0.1f, 1.0f); // 砂のこげ茶色
+			}
 		}
 	}
 }

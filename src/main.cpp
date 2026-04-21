@@ -82,7 +82,7 @@ void generateMPMParticles(const mpmObject& object, float scale, bool sphere = tr
 	const auto position{ static_cast<mpmParticle*>(glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY)) };	// glMapBufferでGPUのものをCPUでいじりますと宣言
 
 	// 球状に配置する場合は、 0.0f～1.0f の範囲の一様乱数を生成
-	std::uniform_real_distribution<GLfloat> dist(0.0f, 1.0f);
+	std::uniform_real_distribution<GLfloat> dist(-1.0f, 1.0f);
 	// 立方体状に配置する場合 0.4f * scale ～ 0.6f * scale の範囲の一様乱数を生成
 	std::uniform_real_distribution<GLfloat> distCube(0.4f * scale, 0.6f * scale);
 
@@ -112,6 +112,9 @@ void generateMPMParticles(const mpmObject& object, float scale, bool sphere = tr
 		position[i].state = 1;						// 状態1:弾性変形
 		position[i].scale = worldScale;				// スケール(グリッド書き込み時に値を拡大)
 		position[i].padding[0] = position[i].padding[1] = position[i].padding[2] = 0;//調整
+		// 石の色を少し混ぜる
+		std::uniform_real_distribution<GLfloat> matDist(0.0f, 1.0f);
+		position[i].padding[0] = (matDist(engine) < 0.05f) ? 1 : 0;
 	}
 
 	// バッファオブジェクトの結合を解除。GPUへの諸々操作も終了したしターゲティングも終わりと宣言
@@ -293,6 +296,9 @@ auto main() -> int {
 		alignas(4) GLfloat p_radius;		// 粒子の半径
 		alignas(4) GLfloat p_overlap;		// 粒子の重なり
 		alignas(4) GLfloat p_padding;		// 調整
+
+		// 障害物
+		alignas(16) glm::vec4 obstacle_sphere; // 静的物体の仮説
 	};
 
 	// 各種材料の特性値とシミュレーションの設定
@@ -331,7 +337,10 @@ auto main() -> int {
 		(g_interval * 0.5f)* (g_interval * 0.5f)* (g_interval * 0.5f) * 400.0f,		// 粒子の質量
 		0.01f,												// 粒子の半径
 		0.0001f,											// 粒子の重なり
-		0													// 調整
+		0,													// 調整
+
+		// 障害物
+		{0.5f, 0.3f, 0.5f, 0.2f}
 	};
 
 	// 粒子群の物理パラメータを格納するユニフォームバッファオブジェクト
@@ -446,17 +455,17 @@ auto main() -> int {
 		glDrawArrays(GL_POINTS, 0, object.count);
 		*/
 		
+		// 地面の描画
+		glUniform1i(isFloorLocation, 1); // 地面フラグ on
+		glBindVertexArray(floorObject.vao);
+		glDrawArrays(GL_POINTS, 0, floorObject.count);
+
+
 		// MPM 結果の描画
 		glUniform1i(isFloorLocation, 0); // 地面フラグ off
 		glUniform1i(glGetUniformLocation(program, "use_debug_color"), window.getUseDebugColor() ? 1 : 0); // デバッグモード起動中かどうか
 		glBindVertexArray(mpmObj.vao);
 		glDrawArrays(GL_POINTS, 0, mpmObj.count);
-		
-
-		// 地面の描画
-		glUniform1i(isFloorLocation, 1); // 地面フラグ on
-		glBindVertexArray(floorObject.vao);
-		glDrawArrays(GL_POINTS, 0, floorObject.count);
 
 		glBindVertexArray(0);
 

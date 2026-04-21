@@ -32,6 +32,9 @@ layout(std140, binding = 1) uniform MPMPhysics {
 	float p_radius;		// 粒子の半径
 	float p_overlap;	// 粒子の重なり
 	float p_padding;	// 調整
+
+	// 障害物
+	vec4 obstacle_sphere; // 静的物体の仮説
 };
 
 // ビット変換用のヘルパー関数
@@ -92,6 +95,38 @@ void main() {
 	// SDF を使うなら、こちらでも dist を作成して判定できるハズ
 	//
 
+	// SDF を追加するための判定ロジック部分
+	vec3 sphere_center = obstacle_sphere.xyz;
+	float sphere_radius = obstacle_sphere.w;
+
+	// 中心から現在位置へのベクトル
+	vec3 to_pos = pos - sphere_center;
+	
+	// SDFの距離計算：中心からの距離 - 半径
+	float sdf_dist = length(to_pos) - sphere_radius;
+
+	// 距離が0未満（球の内部にめり込んでいる）なら衝突処理
+	if (sdf_dist < 0.0) {
+		// 球の表面法線（中心から外側へ向かう正規化ベクトル）
+		vec3 normal = normalize(to_pos);
+		float v_normal = dot(v, normal);
+
+		// 球の中心に向かって進んでいる（めり込もうとしている）場合のみ
+		if (v_normal < 0.0) {
+			vec3 vn = normal * v_normal; // 法線方向の速度
+			vec3 vt = v - vn;            // 接線方向の速度
+
+			// 摩擦の適用
+			float vt_len = length(vt);
+			if(vt_len > 1e-7){
+				float friction_factor = max(0.0, 1.0 - f_friction * abs(v_normal) / vt_len);
+				vt *= friction_factor;
+			}
+
+			// 速度の更新（接線方向の速度 + 反発係数によって減衰させた法線方向の押し返し）
+			v = vt - f_restitution * vn;
+		}
+	}
 
 	// 4. 更新されたデータを戻す
 	// 質量は更新されていないので不要
