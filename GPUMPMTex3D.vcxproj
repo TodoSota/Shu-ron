@@ -143,6 +143,8 @@
     <None Include="src\mpm\shaders\mpm_p2g.comp" />
     <None Include="src\mpm\shaders\mpm_setup.comp" />
     <None Include="packages.config" />
+    <None Include="src\render\mesh.frag" />
+    <None Include="src\render\mesh.vert" />
     <None Include="src\render\point.frag" />
     <None Include="src\render\point.vert" />
     <None Include="legacy\setup.comp" />
@@ -150,6 +152,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\core\errorcheck.h" />
+    <ClInclude Include="src\core\Mesh.h" />
     <ClInclude Include="src\mpm\mpmObject.h" />
     <ClInclude Include="src\core\Object.h" />
     <ClInclude Include="src\core\shader.h" />

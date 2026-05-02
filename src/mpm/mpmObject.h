@@ -1,9 +1,9 @@
 #pragma once
 
-// ƒoƒbƒtƒ@ƒIƒuƒWƒFƒNƒgŠÖ˜A‚ÌéŒ¾‚Ígl.h ‚ÍŠÜ‚Ü‚ê‚Ä‚¢‚È‚¢‚Ì‚Å glew.h ‚ğg‚¤
+// ãƒãƒƒãƒ•ã‚¡ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆé–¢é€£ã®å®£è¨€ã¯gl.h ã¯å«ã¾ã‚Œã¦ã„ãªã„ã®ã§ glew.h ã‚’ä½¿ã†
 #include <GL/glew.h>
 
-// GLM ŠÖ˜A
+// GLM é–¢é€£
 #if !defined(_USE_MATH_DEFINES)
 #	define _USE_MATH_DEFINES
 #endif
@@ -12,46 +12,72 @@
 #endif
 #include <GLM/glm.hpp>
 
-/// —±q‚Ì•¨——Ê
+/// ç²’å­ã®ç‰©ç†é‡
 struct mpmParticle {
 
-	alignas(16) glm::vec4 position;		// ˆÊ’u
-	alignas(16) glm::vec4 velocity;		// ‘¬“x (“à•”“I‚É‚Í vec3 •ª‚ğg—p)
-	alignas(16) glm::mat4 affineC;		//ƒAƒtƒBƒ“‘¬“xs—ñ (“à•”“I‚É‚Í mat3 •ª‚ğg—p)
-	alignas(16) glm::mat4 deformation;	// •ÏŒ`Œù”z (“à•”“I‚É‚Í mat3 •ª‚ğg—p)
+	alignas(16) glm::vec4 position;		// ä½ç½®
+	alignas(16) glm::vec4 velocity;		// é€Ÿåº¦ (å†…éƒ¨çš„ã«ã¯ vec3 åˆ†ã‚’ä½¿ç”¨)
+	alignas(16) glm::mat4 affineC;		//ã‚¢ãƒ•ã‚£ãƒ³é€Ÿåº¦è¡Œåˆ— (å†…éƒ¨çš„ã«ã¯ mat3 åˆ†ã‚’ä½¿ç”¨)
+	alignas(16) glm::mat4 deformation;	// å¤‰å½¢å‹¾é… (å†…éƒ¨çš„ã«ã¯ mat3 åˆ†ã‚’ä½¿ç”¨)
 
-	// »‚Ì‘Y«•ÏŒ`ƒpƒ‰ƒ[ƒ^[
-	alignas(4) float alpha;	//~•š–Ê‚Ì‘å‚«‚³
-	alignas(4) float q;		//d‰»ó‘Ô
-	alignas(4) float vc;	//•Ï‰»‚ÌÛ‚Ì‘ÌÏ•Ï‰»
-	alignas(4) int state;	//ó‘Ô(•Ï‰»)
-	alignas(16) int scale;	//ƒXƒP[ƒ‹(ƒeƒNƒXƒ`ƒƒ‚Ö‚Ì‘‚«‚İ—p)
-	alignas(4) int padding[3]; // ’²®—p
+	// ç ‚ã®å¡‘æ€§å¤‰å½¢ãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿ãƒ¼
+	alignas(4) float alpha;	//é™ä¼é¢ã®å¤§ãã•
+	alignas(4) float q;		//ç¡¬åŒ–çŠ¶æ…‹
+	alignas(4) float vc;	//å¤‰åŒ–ã®éš›ã®ä½“ç©å¤‰åŒ–
+	alignas(4) int state;	//çŠ¶æ…‹(å¤‰åŒ–)
+	alignas(16) int scale;	//ã‚¹ã‚±ãƒ¼ãƒ«(ãƒ†ã‚¯ã‚¹ãƒãƒ£ã¸ã®æ›¸ãè¾¼ã¿ç”¨)
+	alignas(4) int padding[3]; // èª¿æ•´ç”¨
 };
 
-// ”O‚Ì‚½‚ßƒTƒCƒY‚ª16‚Ì”{”‚©Šm”F
-static_assert(sizeof(mpmParticle) % 16 == 0, "Struct size must be a multiple of 16");
+// MPMã®ç²’å­ç¾¤ã®ç‰©ç†ãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿
+struct MPMPhysics {
+	// ã‚·ãƒŸãƒ¥ãƒ¬ãƒ¼ã‚·ãƒ§ãƒ³ç©ºé–“
+	alignas(16) glm::vec3 gravity;		// é‡åŠ›
+	alignas(4) GLfloat timestep;		// æ™‚é–“é–“éš”
+	alignas(16) glm::vec3 f_normal;		// åœ°é¢ã®æ³•ç·š
+	alignas(4) GLfloat f_height;		// åœ°é¢ã®é«˜ã•
 
-/// ’¸“_”z—ñƒIƒuƒWƒFƒNƒg
+	alignas(4) GLfloat f_restitution;	// åœ°é¢ã®åç™ºä¿‚æ•°
+	alignas(4) GLfloat f_friction;		// åœ°é¢ã®æ‘©æ“¦ä¿‚æ•°
+	alignas(4) GLfloat dx;				// ã‚°ãƒªãƒƒãƒ‰ã®é–“éš”
+	alignas(4) GLfloat inv_dx;			// é–“éš”ã®é€†æ•°
+
+	// ç²’å­
+	alignas(4) GLfloat p_restitution;	// ç²’å­ã®åç™ºä¿‚æ•°
+	alignas(4) GLfloat p_vol;			// ç²’å­ã®ä½“ç©
+	alignas(4) GLfloat p_mu;			// ç²’å­ã®ãƒ©ãƒ¡ä¿‚æ•°
+	alignas(4) GLfloat p_lambda;		// ç²’å­ã®ãƒ©ãƒ¡ä¿‚æ•°
+
+	alignas(4) GLfloat p_mass;			// ç²’å­ã®è³ªé‡
+	alignas(4) GLfloat p_radius;		// ç²’å­ã®åŠå¾„
+	alignas(4) GLfloat p_overlap;		// ç²’å­ã®é‡ãªã‚Š
+	alignas(4) GLfloat p_padding;		// èª¿æ•´
+
+	// éšœå®³ç‰©
+	alignas(16) glm::vec4 obstacle_sphere; // é™çš„ç‰©ä½“ã®ä»®èª¬
+	alignas(16) glm::vec4 obstacle_velocity; // é™çš„ç‰©ä½“ã®ä»®èª¬
+};
+
+/// é ‚ç‚¹é…åˆ—ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆ
 struct mpmObject {
 
-	const GLuint vao;		// vao:•`‰æ
-	const GLuint vbo;		// vbo:—±q‚Ìƒf[ƒ^–{‘Ì
-	const GLsizei count;	// ’¸“_”
+	const GLuint vao;		// vao:æç”»
+	const GLuint vbo;		// vbo:ç²’å­ã®ãƒ‡ãƒ¼ã‚¿æœ¬ä½“
+	const GLsizei count;	// é ‚ç‚¹æ•°
 
-	// MPMƒOƒŠƒbƒh‚ÌƒtƒB[ƒ‹ƒh
-	GLuint gridTexX, gridTexY, gridTexZ, gridTexA;	// 3DƒeƒNƒXƒ`ƒƒID | ¶¬‚µ‚ÄŒã‚©‚ç•ÏX‚·‚é‚Ì‚Å const ‚Í‚È‚µ
-	const int gridSize;		// ƒOƒŠƒbƒh‚ÌƒTƒCƒY(ƒeƒNƒXƒ`ƒƒ‚Ì‰ğ‘œ“x)
+	// MPMã‚°ãƒªãƒƒãƒ‰ã®ãƒ•ã‚£ãƒ¼ãƒ«ãƒ‰
+	GLuint gridTexX, gridTexY, gridTexZ, gridTexA;	// 3Dãƒ†ã‚¯ã‚¹ãƒãƒ£ID | ç”Ÿæˆã—ã¦å¾Œã‹ã‚‰å¤‰æ›´ã™ã‚‹ã®ã§ const ã¯ãªã—
+	const int gridSize;		// ã‚°ãƒªãƒƒãƒ‰ã®ã‚µã‚¤ã‚º(ãƒ†ã‚¯ã‚¹ãƒãƒ£ã®è§£åƒåº¦)
 
-	/// ƒRƒ“ƒXƒgƒ‰ƒNƒ^
-	/// @param[in] count ’¸“_‚Ì”
-	/// @param[in] gridSize ƒOƒŠƒbƒh(3DƒeƒNƒXƒ`ƒƒ)‚Ì‰ğ‘œ“x
+	/// ã‚³ãƒ³ã‚¹ãƒˆãƒ©ã‚¯ã‚¿
+	/// @param[in] count é ‚ç‚¹ã®æ•°
+	/// @param[in] gridSize ã‚°ãƒªãƒƒãƒ‰(3Dãƒ†ã‚¯ã‚¹ãƒãƒ£)ã®è§£åƒåº¦
 	mpmObject(GLsizei count, int gridSize);
 
-	mpmObject(const mpmObject& mpmObject) = delete;					// ƒRƒs[ƒRƒ“ƒXƒgƒ‰ƒNƒ^‚ğ‹Ö~
-	virtual ~mpmObject();											// ƒfƒRƒ“ƒXƒgƒ‰ƒNƒ^
-	mpmObject& operator = (const mpmObject& mpmObject) = delete;	// ‘ã“ü‰‰Zq‚Íg—p‚µ‚È‚¢
-	mpmObject& operator=(mpmObject&& mpmObject) = default;			// ƒ€[ƒu‘ã“ü‰‰Zq‚ÍƒfƒtƒHƒ‹ƒg‚ğg—p
+	mpmObject(const mpmObject& mpmObject) = delete;					// ã‚³ãƒ”ãƒ¼ã‚³ãƒ³ã‚¹ãƒˆãƒ©ã‚¯ã‚¿ã‚’ç¦æ­¢
+	virtual ~mpmObject();											// ãƒ‡ã‚³ãƒ³ã‚¹ãƒˆãƒ©ã‚¯ã‚¿
+	mpmObject& operator = (const mpmObject& mpmObject) = delete;	// ä»£å…¥æ¼”ç®—å­ã¯ä½¿ç”¨ã—ãªã„
+	mpmObject& operator=(mpmObject&& mpmObject) = default;			// ãƒ ãƒ¼ãƒ–ä»£å…¥æ¼”ç®—å­ã¯ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆã‚’ä½¿ç”¨
 
 
 };

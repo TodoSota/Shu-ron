@@ -1,43 +1,44 @@
 #version 430 core
 
-// 8*8*8 �̃X���b�h�O���[�v�ŃO���b�h�S�̂𑖍�
+// 8*8*8 のスレッドグループでグリッド全体を走査
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 
-// �e�N�X�`�� 4��
+// テクスチャ 4枚
 layout(r32ui, binding = 0) uniform uimage3D gridIMX;
 layout(r32ui, binding = 1) uniform uimage3D gridIMY;
 layout(r32ui, binding = 2) uniform uimage3D gridIMZ;
 layout(r32ui, binding = 3) uniform uimage3D gridIMA;
 
-// MPM�̗��q�Q�̕����p�����[�^
+// MPMの粒子群の物理パラメータ
 layout(std140, binding = 1) uniform MPMPhysics {
-	// �V�~�����[�V�������
-	vec3 gravity;		// �d��
-	float timestep;		// ���ԊԊu
-	vec3 f_normal;		// �n�ʂ̖@��
-	float f_height;		// �n�ʂ̍���
+	// シミュレーション空間
+	vec3 gravity;		// 重力
+	float timestep;		// 時間間隔
+	vec3 f_normal;		// 地面の法線
+	float f_height;		// 地面の高さ
 	
-	float f_restitution;// �n�ʂ̔����W��
-	float f_friction;	// �n�ʂ̖��C�W��
-	float dx;			// �O���b�h�̊Ԋu
-	float inv_dx;		// �Ԋu�̋t��
+	float f_restitution;// 地面の反発係数
+	float f_friction;	// 地面の摩擦係数
+	float dx;			// グリッドの間隔
+	float inv_dx;		// 間隔の逆数
 
-	// ���q
-	float p_restitution;// ���q�̔����W��
-	float p_vol;		// ���q�̑̐�
-	float p_mu;			// ���q�̃����W��
-	float p_lambda;		// ���q�̃����W��
+	// 粒子
+	float p_restitution;// 粒子の反発係数
+	float p_vol;		// 粒子の体積
+	float p_mu;			// 粒子のラメ係数
+	float p_lambda;		// 粒子のラメ係数
 
-	float p_mass;		// ���q�̎���
-	float p_radius;		// ���q�̔��a
-	float p_overlap;	// ���q�̏d�Ȃ�
-	float p_padding;	// ����
+	float p_mass;		// 粒子の質量
+	float p_radius;		// 粒子の半径
+	float p_overlap;	// 粒子の重なり
+	float p_padding;	// 調整
 
-	// ��Q��
-	vec4 obstacle_sphere; // �ÓI���̂̉���
+	// 障害物
+	vec4 obstacle_sphere; // 静的物体の仮説
+	vec4 obstacle_velocity; // 静的物体の仮説
 };
 
-// �r�b�g�ϊ��p�̃w���p�[�֐�
+// ビット変換用のヘルパー関数
 float uintToFloat(uint val) { return uintBitsToFloat(val); }
 uint floatToUint(float val) { return floatBitsToUint(val); }
 
@@ -45,12 +46,12 @@ void main() {
 	ivec3 coords = ivec3(gl_GlobalInvocationID.xyz);
 	ivec3 size = imageSize(gridIMX);
 
-	// �͈͊O�A�N�Z�X�h�~
+	// 範囲外アクセス防止
     if (coords.x >= size.x || coords.y >= size.y || coords.z >= size.z) return;
 
-	// 1. �O���b�h�f�[�^�ǂݍ���
+	// 1. グリッドデータ読み込み
 	float m = uintToFloat(imageLoad(gridIMA, coords).x);
-	if (m <= 1e-7) return;	// ���ʂ��قڃ[���Ȃ珈���X�L�b�v
+	if (m <= 1e-7) return;	// 質量がほぼゼロなら処理スキップ
 
 	vec3 v = vec3(
         uintToFloat(imageLoad(gridIMX, coords).x),
@@ -58,78 +59,86 @@ void main() {
         uintToFloat(imageLoad(gridIMZ, coords).x)
     );
 
-	// 2. ���x�Z�o�ƊO��(�d�͊܂�)�̓K�p
-	v /= m;						// �^���ʂ����ʂŊ���
-	v += gravity * timestep;	// �d�͂�K�p
+	// 2. 速度算出と外力(重力含む)の適用
+	v /= m;						// 運動量を質量で割る
+	v += gravity * timestep;	// 重力を適用
 
-	// 3. ���E�����E�����蔻��
-	vec3 pos = (vec3(coords) + vec3(0.5)) * dx;	// ���݂̃Z���̐��E���W�̌v�Z
+	// 3. 境界条件・当たり判定
+	vec3 pos = (vec3(coords) + vec3(0.5)) * dx;	// 現在のセルの世界座標の計算
 
-	float dist = dot(pos, f_normal) - f_height;	// ���Ƃ̔���E�O���b�h�ł̔���Ȃ̂ŁA�m�[�h�������ђʂ��Ă���̂������Ă���
+	float dist = dot(pos, f_normal) - f_height;	// 床との判定・グリッドでの判定なので、ノードが床を貫通しているのかを見ている
 
-	// ����艺�Ȃ�
+	// 床より下なら
 	if (dist < 0.0) {
-		float v_normal = dot(v, f_normal); // �@�������̐������擾
+		float v_normal = dot(v, f_normal); // 法線方向の成分を取得
 
-		// �������ɗ������Ă�Ȃ�
+		// 下向きに落下してるなら
 		if (v_normal < 0.0) {
-			vec3 vn = f_normal * v_normal;	// �@�������̑��x
-			vec3 vt = v - vn;				// �ڐ������̑��x
+			vec3 vn = f_normal * v_normal;	// 法線方向の速度
+			vec3 vt = v - vn;				// 接線方向の速度
 
-			// ���C
+			// 摩擦
 			float vt_len = length(vt);
 			if(vt_len > 1e-7){
 				float friction_factor = max(0.0, 1.0 - f_friction * abs(v_normal) / vt_len);
 				vt *= friction_factor;
 			}
 
-			// ���x�̍X�V
+			// 速度の更新
 			v = vt - f_restitution * vn;
 		}
 	}
 
 
 	//
-	// ���I���̂₻�̑������蔻����s���Ȃ炱��
-	// ���C�̕����͎g���܂킹�邩���Ȃ̂ŁA�K�v�Ȃ�w���p�[�֐��ɂ���
-	// SDF ���g���Ȃ�A������ł� dist ���쐬���Ĕ���ł���n�Y
+	// 動的物体やその他当たり判定を行うならここ
+	// 摩擦の部分は使いまわせるかもなので、必要ならヘルパー関数にする
+	// SDF を使うなら、こちらでも dist を作成して判定できるハズ
 	//
 
-	// SDF ��ǉ����邽�߂̔��胍�W�b�N����
+	// SDF を追加するための判定ロジック部分
 	vec3 sphere_center = obstacle_sphere.xyz;
 	float sphere_radius = obstacle_sphere.w;
 
-	// ���S���猻�݈ʒu�ւ̃x�N�g��
+	// 中心から現在位置へのベクトル
 	vec3 to_pos = pos - sphere_center;
 	
-	// SDF�̋����v�Z�F���S����̋��� - ���a
+	// SDFの距離計算：中心からの距離 - 半径
 	float sdf_dist = length(to_pos) - sphere_radius;
 
-	// ������0�����i���̓����ɂ߂荞��ł���j�Ȃ�Փˏ���
+	// 距離が0未満（球の内部にめり込んでいる）なら衝突処理
 	if (sdf_dist < 0.0) {
-		// ���̕\�ʖ@���i���S����O���֌��������K���x�N�g���j
+		// 球の表面法線（中心から外側へ向かう正規化ベクトル）
 		vec3 normal = normalize(to_pos);
-		float v_normal = dot(v, normal);
+		vec3 obs_vel = obstacle_velocity.xyz;
 
-		// ���̒��S�Ɍ������Đi��ł���i�߂荞�����Ƃ��Ă���j�ꍇ�̂�
+		vec3 v_rel = v - obs_vel;
+		float v_normal = dot(v_rel, normal);
+		float push_out_v = (-sdf_dist / timestep) * 0.3;	// 押し出す力(物体に触れているときちょっと斥力を与える)
+
+		// 球の中心に向かって進んでいる（めり込もうとしている）場合のみ
 		if (v_normal < 0.0) {
-			vec3 vn = normal * v_normal; // �@�������̑��x
-			vec3 vt = v - vn;            // �ڐ������̑��x
+			vec3 vn = normal * v_normal; // 法線方向の速度
+			vec3 vt = v_rel - vn;        // 接線方向の速度
 
-			// ���C�̓K�p
+			// 摩擦の適用
 			float vt_len = length(vt);
 			if(vt_len > 1e-7){
-				float friction_factor = max(0.0, 1.0 - f_friction * abs(v_normal) / vt_len);
+				float normal_force = abs(v_normal - push_out_v);	// 押し出しに必要な力
+				float friction_factor = max(0.0, 1.0 - f_friction * normal_force / vt_len);
 				vt *= friction_factor;
 			}
+			// 反発と押し出しの強い方を採用する
+			float final_vn = max(push_out_v, -v_normal * f_restitution);
 
-			// ���x�̍X�V�i�ڐ������̑��x + �����W���ɂ���Č����������@�������̉����Ԃ��j
-			v = vt - f_restitution * vn;
+			// 速度の更新（接線方向の速度 + 反発係数によって減衰させた法線方向の押し返し）
+			v_rel = vt + normal * final_vn;
+			v = v_rel + obs_vel;
 		}
 	}
 
-	// 4. �X�V���ꂽ�f�[�^��߂�
-	// ���ʂ͍X�V����Ă��Ȃ��̂ŕs�v
+	// 4. 更新されたデータを戻す
+	// 質量は更新されていないので不要
 	imageStore(gridIMX, coords, uvec4(floatToUint(v.x * m)));
     imageStore(gridIMY, coords, uvec4(floatToUint(v.y * m)));
     imageStore(gridIMZ, coords, uvec4(floatToUint(v.z * m)));

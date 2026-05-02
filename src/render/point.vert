@@ -1,17 +1,17 @@
 #version 430 core
 
-// ’¸“_‚ÌˆÊ’u (C++ ‚Ì VAO ‚©‚ç)
+// é ‚ç‚¹ã®ä½ç½® (C++ ã® VAO ã‹ã‚‰)
 layout (location = 0) in vec4 position;
 
-// Uniform‚ğ’Ç‰Á
+// Uniformã‚’è¿½åŠ 
 uniform vec3 floor_normal;
 uniform float floor_height;
-uniform bool is_floor; // ’n–Ê•`‰æ‚ÌÛ‚É‚Í true
+uniform int is_floor; // åœ°é¢æç”»ã®éš›ã«ã¯ true
 
-// ƒ‚ƒfƒ‹ƒrƒ…[“Š‰e•ÏŠ·s—ñ
+// ãƒ¢ãƒ‡ãƒ«ãƒ“ãƒ¥ãƒ¼æŠ•å½±å¤‰æ›è¡Œåˆ—
 uniform mat4 mc;
 
-// MPM‚Ì—±qŒQ‚Ìƒf[ƒ^\‘¢iƒRƒ“ƒsƒ…[ƒgƒVƒF[ƒ_[‚Æ“¯‚¶‚à‚Ìj
+// MPMã®ç²’å­ç¾¤ã®ãƒ‡ãƒ¼ã‚¿æ§‹é€ ï¼ˆã‚³ãƒ³ãƒ”ãƒ¥ãƒ¼ãƒˆã‚·ã‚§ãƒ¼ãƒ€ãƒ¼ã¨åŒã˜ã‚‚ã®ï¼‰
 struct mpmParticle {
 	vec4 position;
 	vec4 velocity;
@@ -25,28 +25,30 @@ struct mpmParticle {
 	int padding[3];
 };
 
-// SSBOƒoƒCƒ“ƒh (ƒƒCƒ“ƒ‹[ƒv‚ÅƒoƒCƒ“ƒhÏ‚İ‚ÌVBOŒ“SSBO‚ğ’¼Ú“Ç‚İ‚Ş)
+// SSBOãƒã‚¤ãƒ³ãƒ‰ (ãƒ¡ã‚¤ãƒ³ãƒ«ãƒ¼ãƒ—ã§ãƒã‚¤ãƒ³ãƒ‰æ¸ˆã¿ã®VBOå…¼SSBOã‚’ç›´æ¥èª­ã¿è¾¼ã‚€)
 layout(std430, binding = 0) buffer mpmBuffer {
 	mpmParticle p[];
 };
 
-// ƒtƒ‰ƒOƒƒ“ƒgƒVƒF[ƒ_[‚Ö‘—‚éó‘Ô•Ï” (•âŠÔ‚µ‚È‚¢‚æ‚¤‚Éflat‚ğw’è)
+// ãƒ•ãƒ©ã‚°ãƒ¡ãƒ³ãƒˆã‚·ã‚§ãƒ¼ãƒ€ãƒ¼ã¸é€ã‚‹çŠ¶æ…‹å¤‰æ•° (è£œé–“ã—ãªã„ã‚ˆã†ã«flatã‚’æŒ‡å®š)
 out flat int v_state;
 out flat int v_material;
 
 void main(){
 	vec4 pos = position;
-	if(is_floor) {
+	if(is_floor == 1) {
 		float h = floor_height - (floor_normal.x * pos.x + floor_normal.z * pos.z) / floor_normal.y;
 		pos.y = h;
-		v_state = -1;	// ’n–Ê—p‚Ìƒ_ƒ~[’l
-	} else {
+		v_state = -1;	// åœ°é¢ç”¨ã®ãƒ€ãƒŸãƒ¼å€¤
+	} else if(is_floor == 0) {
 		v_state = p[gl_VertexID].state;
+	} else {
+		v_state = -1;	// åœ°é¢ç”¨ã®ãƒ€ãƒŸãƒ¼å€¤
 	}
 
-	// Î‚Æ“y‚ÌFƒtƒ‰ƒO‚ğ‘—‚é
+	// çŸ³ã¨åœŸã®è‰²ãƒ•ãƒ©ã‚°ã‚’é€ã‚‹
 	v_material = p[gl_VertexID].padding[0];
 
-	// ’¸“_‚ÌˆÊ’u‚ğƒNƒŠƒbƒsƒ“ƒOÀ•WŒn‚É•ÏŠ·
+	// é ‚ç‚¹ã®ä½ç½®ã‚’ã‚¯ãƒªãƒƒãƒ”ãƒ³ã‚°åº§æ¨™ç³»ã«å¤‰æ›
 	gl_Position = mc * pos;
 }

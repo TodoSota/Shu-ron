@@ -1,10 +1,11 @@
-﻿// Windowsの OpenGL ライブラリをリンクする
+// Windowsの OpenGL ライブラリをリンクする
 #pragma comment(lib, "opengl32.lib")
 
 #include "core/Window.h"		// ウィンドウの生成から入力などの処理
 #include "core/errorcheck.h"	// OepnGL のエラーチェック
 #include "core/shader.h"		// シェーダー読み込み処理
 #include "core/Object.h"		// 描画のためのデータパッケージ
+#include "core/Mesh.h"			// UV球のメッシュデータパッケージ
 #include "mpm/mpmObject.h"	// MPM 用の描画データパッケージ
 
 // 標準ライブラリ
@@ -17,7 +18,11 @@
 
 // 粒子数
 const auto PARTICLE_COUNT{ 10000 }; // ノートPCでやるには10000重いので
-const float worldScale = 1.0f;
+const float worldScale = 0.67f;
+
+// <仮設>動く障害物
+float move_speed = 0.3f;
+float move_range = 0.8f;
 
 /// 点群データ作成
 /// @param[in] object 点群データを作成する対象のオブジェクト
@@ -97,7 +102,8 @@ void generateMPMParticles(const mpmObject& object, float scale, bool sphere = tr
 
 			// 粒子を球状に配置する
 			position[i].position = { s * cos(t) + 0.5f, s * sin(t) + 0.5f, r * v + 0.5f, 1.0f };
-		} else {
+		}
+		else {
 			// 粒子を立方体状に配置
 			position[i].position = { distCube(engine), distCube(engine),distCube(engine), 1.0f };
 		}
@@ -207,20 +213,6 @@ auto main() -> int {
 	// uniform 変数の設定
 	const auto mcLoc{ glGetUniformLocation(program, "mc") };	// mc の場所を取得
 
-	/* 既存の簡易シミュレーション
-	// 粒子の処理を初期化するコンピュートシェーダーのプログラムオブジェクトを作成
-	const auto setup{ loadCompute("setup.comp") };
-	// 粒子の衝突を処理するコンピュートシェーダーのプログラムオブジェクトを作成
-	const auto collide{ loadCompute("collide.comp") };
-	// 粒子の位置を更新するコンピュートシェーダーのプログラムオブジェクトを作成
-	const auto update{ loadCompute("update.comp") };
-	// プログラムオブジェクトの作成失敗なら
-	if (setup == 0 || collide == 0 || update == 0) {
-		std::cerr << "Can not create primitive simulator shader." << std::endl;
-		return EXIT_FAILURE;
-	}
-	*/
-	
 	// MPM シミュレーション
 	const auto mpmSetup{ loadCompute("src/mpm/shaders/mpm_setup.comp") };
 	const auto mpmP2G{ loadCompute("src/mpm/shaders/mpm_p2g.comp") };
@@ -234,6 +226,11 @@ auto main() -> int {
 	}
 
 	// 2. オブジェクトの作成
+	// UV球を準備
+	const auto meshProgram{ loadProgram("src/render/mesh.vert", "src/render/mesh.frag") };
+	MeshObject obstacleMesh(32, 16);	// 障害物(UV球)のポリゴン情報
+	glEnable(GL_DEPTH_TEST);
+
 	// 図形を作成
 	Object object(PARTICLE_COUNT);
 	generateParticles(object, 1.0f);
@@ -247,7 +244,7 @@ auto main() -> int {
 	const auto GRID_SIZE = 20;
 	Object floorObject(GRID_SIZE * GRID_SIZE);
 	// 地面用の点群データを生成し転送
-	std::vector<Particle> floorParticles(GRID_SIZE* GRID_SIZE);
+	std::vector<Particle> floorParticles(GRID_SIZE * GRID_SIZE);
 	for (int i = 0; i < GRID_SIZE; i++) {
 		for (int j = 0; j < GRID_SIZE; j++) {
 			float x = (i - GRID_SIZE / 2) * 0.2f;
@@ -260,87 +257,36 @@ auto main() -> int {
 	glBindBuffer(GL_ARRAY_BUFFER, floorObject.vbo);
 	glBufferSubData(GL_ARRAY_BUFFER, 0, floorParticles.size() * sizeof(Particle), floorParticles.data());
 
-	// 粒子群の物理パラメータ
-	struct Physics {
-		alignas(16) glm::vec3 gravity;				// 重力
-		alignas(4) GLfloat floor_height;			// 地面の高さ
-		alignas(16) glm::vec3 floor_normal;			// 地面の法線
-		alignas(4) GLfloat floor_restitution;		// 地面の反発係数
-		alignas(4) GLfloat particle_restitution;	// 粒子の反発係数
-		alignas(4) GLfloat mass;					// 粒子の質量
-		alignas(4) GLfloat radius;					// 粒子の半径
-		alignas(4) GLfloat overlap;					// 粒子の重なり
-		alignas(4) GLfloat timestep;				// 時間間隔
-	};
-
-	// MPMの粒子群の物理パラメータ
-	struct MPMPhysics {
-		// シミュレーション空間
-		alignas(16) glm::vec3 gravity;		// 重力
-		alignas(4) GLfloat timestep;		// 時間間隔
-		alignas(16) glm::vec3 f_normal;		// 地面の法線
-		alignas(4) GLfloat f_height;		// 地面の高さ
-		
-		alignas(4) GLfloat f_restitution;	// 地面の反発係数
-		alignas(4) GLfloat f_friction;		// 地面の摩擦係数
-		alignas(4) GLfloat dx;				// グリッドの間隔
-		alignas(4) GLfloat inv_dx;			// 間隔の逆数
-
-		// 粒子
-		alignas(4) GLfloat p_restitution;	// 粒子の反発係数
-		alignas(4) GLfloat p_vol;			// 粒子の体積
-		alignas(4) GLfloat p_mu;			// 粒子のラメ係数
-		alignas(4) GLfloat p_lambda;		// 粒子のラメ係数
-
-		alignas(4) GLfloat p_mass;			// 粒子の質量
-		alignas(4) GLfloat p_radius;		// 粒子の半径
-		alignas(4) GLfloat p_overlap;		// 粒子の重なり
-		alignas(4) GLfloat p_padding;		// 調整
-
-		// 障害物
-		alignas(16) glm::vec4 obstacle_sphere; // 静的物体の仮説
-	};
-
 	// 各種材料の特性値とシミュレーションの設定
 	const float E_s = 3.537e5f;	// ヤング率
 	const float nu_s = 0.3f;	// ポアソン比
 	const float g_interval = worldScale / (float)N_GRID;	// グリッドの間隔
 
-	Physics physics{
-		{0.0f, -9.8f, 0.0f},//重力
-		-1.0f,				//地面の高さ
-		{0.0f, 1.0f, 0.0f},	// 地面の法線
-		0.5f,				// 地面の反発係数
-		0.2f,				// 粒子の反発係数
-		1.0f,				// 粒子の質量
-		0.1f,				// 粒子の半径
-		0.0001f,			// 粒子の重なり
-		1.0f / 60.0f,		// 時間間隔
-	};
-
+	// MPMObject で定義している構造体 : 空間における設定
 	MPMPhysics mpmphysics{
 		// シミュレーション空間
 		{0.0f, -9.8f, 0.0f},// 重力
 		1.0 / 1000.0f,		// 時間間隔
 		{0.0f, 1.0f, 0.0f},	// 地面の法線
-		0.0f,				// 地面の高さ
+		0.1f,				// 地面の高さ
 		0.5f,				// 地面の反発係数
 		0.6f,				// 地面の摩擦係数
 		g_interval,			// グリッドの間隔
-		1.0f / g_interval,			// 間隔の逆数
+		1.0f / g_interval,	// 間隔の逆数
 
 		// 粒子
 		0.2f,												// 粒子の反発係数
-		pow(g_interval * 0.5f, 3.0f),								// 粒子の体積
+		pow(g_interval * 0.5f, 3.0f),						// 粒子の体積
 		E_s / (2.0f * (1.0f + nu_s)),						// 粒子のラメ係数
 		E_s * nu_s / ((1.0f + nu_s) * (1.0f - 2.0f * nu_s)),// 粒子のラメ係数
-		(g_interval * 0.5f)* (g_interval * 0.5f)* (g_interval * 0.5f) * 400.0f,		// 粒子の質量
+		(g_interval * 0.5f) * (g_interval * 0.5f) * (g_interval * 0.5f) * 400.0f,// 粒子の質量
 		0.01f,												// 粒子の半径
 		0.0001f,											// 粒子の重なり
 		0,													// 調整
 
 		// 障害物
-		{0.5f, 0.3f, 0.5f, 0.2f}
+		{0.5f, 0.1f, 0.5f, 0.1f},
+		{0.0f, 0.0f, 0.0f, 0.0f}
 	};
 
 	// 粒子群の物理パラメータを格納するユニフォームバッファオブジェクト
@@ -367,21 +313,31 @@ auto main() -> int {
 		// 更新処理を行う
 		window.update();
 
+		float time = glfwGetTime();
+
+		// 移動速度と位置
+		float z_pos = -0.5f - (1.5 * move_range * sin(time * move_speed));
+		float z_vel = move_range * move_speed * cos(time * move_speed);
+
+		mpmphysics.obstacle_sphere.y = z_pos;
+		mpmphysics.obstacle_velocity = glm::vec4(0.0f, z_vel, 0.0f, 0.0f);
+
+		glBindBuffer(GL_UNIFORM_BUFFER, ubo);
+		glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(MPMPhysics), &mpmphysics);
+		glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
 		// シェーダーストレージバッファオブジェクトを 0 番の結合ポイントに結合する
-		//glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, object.vbo); // 通常
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mpmObj.vbo); // <MPM用>
 
 		// ユニフォームバッファオブジェクトを 1 番に結合
 		glBindBufferBase(GL_UNIFORM_BUFFER, 1, ubo);
-		
-		// 以下、MPMの計算部分 置換で一気にアクティブにして
-		
-		// <MPM用>3Dテクスチャを 0-3 番に結合
+
+		// 3Dテクスチャを 0-3 番に結合
 		glBindImageTexture(0, mpmObj.gridTexX, 0, GL_TRUE, 0, GL_READ_WRITE, GL_R32UI);
 		glBindImageTexture(1, mpmObj.gridTexY, 0, GL_TRUE, 0, GL_READ_WRITE, GL_R32UI);
 		glBindImageTexture(2, mpmObj.gridTexZ, 0, GL_TRUE, 0, GL_READ_WRITE, GL_R32UI);
 		glBindImageTexture(3, mpmObj.gridTexA, 0, GL_TRUE, 0, GL_READ_WRITE, GL_R32UI);
-		
+
 
 		// [mpm_setup] グリッドのリセット
 		glUseProgram(mpmSetup);
@@ -408,25 +364,6 @@ auto main() -> int {
 		glUseProgram(mpmMove);
 		glDispatchCompute((mpmObj.count + 63) / 64, 1, 1);
 		glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
-		
-
-		/*
-		// 以下、粒子シミュレート分
-		// 
-		// 初期化のコンピュートシェーダー
-		glUseProgram(setup);
-		glDispatchCompute(object.count, 1, 1);// 計算を実行
-		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);// 書き込み完了待ち
-
-		// 粒子の衝突のコンピュートシェーダー
-		glUseProgram(collide);
-		glDispatchCompute(object.count, 1, 1);// 計算を実行
-		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);// 書き込み完了待ち
-
-		// 位置更新のコンピュートシェーダー
-		glUseProgram(update);
-		glDispatchCompute(object.count, 1, 1);// 計算を実行
-		*/
 
 		// ウィンドウを消去(カラー/デプスバッファを初期状態に)
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -447,15 +384,6 @@ auto main() -> int {
 		glUniform3fv(glGetUniformLocation(program, "floor_normal"), 1, glm::value_ptr(mpmphysics.f_normal));
 		glUniform1f(glGetUniformLocation(program, "floor_height"), mpmphysics.f_height);
 		GLint isFloorLocation = glGetUniformLocation(program, "is_floor");
-
-		/*
-		// 粒子の描画
-		glUniform1i(isFloorLocation, 0); // 地面フラグ off
-		glBindVertexArray(object.vao);
-		glDrawArrays(GL_POINTS, 0, object.count);
-		*/
-		
-		// 地面の描画
 		glUniform1i(isFloorLocation, 1); // 地面フラグ on
 		glBindVertexArray(floorObject.vao);
 		glDrawArrays(GL_POINTS, 0, floorObject.count);
@@ -466,6 +394,22 @@ auto main() -> int {
 		glUniform1i(glGetUniformLocation(program, "use_debug_color"), window.getUseDebugColor() ? 1 : 0); // デバッグモード起動中かどうか
 		glBindVertexArray(mpmObj.vao);
 		glDrawArrays(GL_POINTS, 0, mpmObj.count);
+
+		// 障害物の描画
+		glUseProgram(meshProgram);
+		glm::vec3 spherePos = glm::vec3(mpmphysics.obstacle_sphere);// 球の位置とサイズをシミュレーションデータから取得
+		float sphereRadius = mpmphysics.obstacle_sphere.w;
+		glm::mat4 objModel = 
+			glm::translate(glm::mat4(1.0f), spherePos)* glm::scale(glm::mat4(1.0f), glm::vec3(sphereRadius));// モデル行列の作成（平行移動 × 拡大縮小）
+		glm::mat4 sphereModel = model * objModel;	// マウスの回転も含めた model を作成
+		glm::mat4 mvp = projection * view *sphereModel;		// MVP行列を計算してシェーダーに送信
+		glUniformMatrix4fv(glGetUniformLocation(meshProgram, "mc"), 1, GL_FALSE, glm::value_ptr(mvp));
+		glUniformMatrix4fv(glGetUniformLocation(meshProgram, "model"), 1, GL_FALSE, glm::value_ptr(sphereModel));
+
+		// メッシュを描画
+		glBindVertexArray(obstacleMesh.vao);
+		glDrawElements(GL_TRIANGLES, obstacleMesh.indexCount, GL_UNSIGNED_INT, 0);
+		glBindVertexArray(0);
 
 		glBindVertexArray(0);
 
@@ -488,7 +432,7 @@ auto main() -> int {
 		ImGui::SliderFloat("Floor Restitution", &mpmphysics.f_restitution, 0.0f, 1.0f);
 		ImGui::SliderFloat("Floor Friction", &mpmphysics.f_friction, 0.0f, 1.0f);
 		ImGui::SliderFloat("dx", &mpmphysics.dx, 0.0f, 1.0f);
-		ImGui::SliderFloat("inv_dx", &mpmphysics.inv_dx, 0.0f, N_GRID*2);
+		ImGui::SliderFloat("inv_dx", &mpmphysics.inv_dx, 0.0f, N_GRID * 2);
 		ImGui::SliderFloat("Particle Restitution", &mpmphysics.p_restitution, 0.0f, 1.0f);
 		ImGui::SliderFloat("Particle vol", &mpmphysics.p_vol, 0.0f, 1.0f);
 		//ImGui::SliderFloat("Particle mu", &mpmphysics.p_mu, 0.0f, 1.0f);
@@ -502,7 +446,7 @@ auto main() -> int {
 		if (ImGui::Checkbox("Debug Color Mode (Space key)", &debugFlag)) {
 			window.setUseDebugColor(debugFlag);
 		}
-		
+
 
 		// 「リスタート」ボタン
 		if (ImGui::Button("Restart Simulation")) {
