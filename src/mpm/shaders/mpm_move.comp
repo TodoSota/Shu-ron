@@ -1,75 +1,75 @@
 #version 430 core
 
-// 1¥°¥ë¡¼¥× 64¥¹¥ì¥Ã¥É
+// 1ã‚°ãƒ«ãƒ¼ãƒ— 64ã‚¹ãƒ¬ãƒƒãƒ‰
 layout(local_size_x = 64) in;
 
-// Î³»Ò¤Î¥Ç¡¼¥¿¹½Â¤
+// ç²’å­ã®ãƒ‡ãƒ¼ã‚¿æ§‹é€ 
 struct mpmParticle {
-	vec4 position;		// °ÌÃÖ
-	vec4 velocity;		// Â®ÅÙ + padding
-	mat4 affineC;		//¥¢¥Õ¥£¥óÂ®ÅÙ¹ÔÎó (mat3 Ê¬¤Î¤ßÃÍ¤¢¤ê)
-	mat4 deformation;	// ÊÑ·Á¸ûÇÛ (mat3 Ê¬¤Î¤ßÃÍ¤¢¤ê)
+	vec4 position;		// ä½ç½®
+	vec4 velocity;		// é€Ÿåº¦ + padding
+	mat4 affineC;		//ã‚¢ãƒ•ã‚£ãƒ³é€Ÿåº¦è¡Œåˆ— (mat3 åˆ†ã®ã¿å€¤ã‚ã‚Š)
+	mat4 deformation;	// å¤‰å½¢å‹¾é… (mat3 åˆ†ã®ã¿å€¤ã‚ã‚Š)
 
-	// º½¤ÎÁºÀ­ÊÑ·Á¥Ñ¥é¥á¡¼¥¿¡¼
-	 float alpha;		//¹ßÉúÌÌ¤ÎÂç¤­¤µ
-	 float q;			//¹Å²½¾õÂÖ
-	 float vc;			//ÊÑ²½¤Îºİ¤ÎÂÎÀÑÊÑ²½
-	 int state;			//¾õÂÖ(ÊÑ²½)
-	 int scale;			//¥¹¥±¡¼¥ë
-	 int padding[3];		//Ä´À°
+	// ç ‚ã®å¡‘æ€§å¤‰å½¢ãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿ãƒ¼
+	 float alpha;		//é™ä¼é¢ã®å¤§ãã•
+	 float q;			//ç¡¬åŒ–çŠ¶æ…‹
+	 float vc;			//å¤‰åŒ–ã®éš›ã®ä½“ç©å¤‰åŒ–
+	 int state;			//çŠ¶æ…‹(å¤‰åŒ–)
+	 int scale;			//ã‚¹ã‚±ãƒ¼ãƒ«
+	 int padding[3];		//èª¿æ•´
 };
 
 layout(std430, binding = 0) buffer mpmBuffer { mpmParticle p[]; };
 
-// MPM¤ÎÎ³»Ò·²¤ÎÊªÍı¥Ñ¥é¥á¡¼¥¿
+// MPMã®ç²’å­ç¾¤ã®ç‰©ç†ãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿
 layout(std140, binding = 1) uniform MPMPhysics {
-	// ¥·¥ß¥å¥ì¡¼¥·¥ç¥ó¶õ´Ö
-	vec3 gravity;		// ½ÅÎÏ
-	float timestep;		// »ş´Ö´Ö³Ö
-	vec3 f_normal;		// ÃÏÌÌ¤ÎË¡Àş
-	float f_height;		// ÃÏÌÌ¤Î¹â¤µ
+	// ã‚·ãƒŸãƒ¥ãƒ¬ãƒ¼ã‚·ãƒ§ãƒ³ç©ºé–“
+	vec3 gravity;		// é‡åŠ›
+	float timestep;		// æ™‚é–“é–“éš”
+	vec3 f_normal;		// åœ°é¢ã®æ³•ç·š
+	float f_height;		// åœ°é¢ã®é«˜ã•
 	
-	float f_restitution;// ÃÏÌÌ¤ÎÈ¿È¯·¸¿ô
-	float f_friction;	// ÃÏÌÌ¤ÎËà»¤·¸¿ô
-	float dx;			// ¥°¥ê¥Ã¥É¤Î´Ö³Ö
-	float inv_dx;		// ´Ö³Ö¤ÎµÕ¿ô
+	float f_restitution;// åœ°é¢ã®åç™ºä¿‚æ•°
+	float f_friction;	// åœ°é¢ã®æ‘©æ“¦ä¿‚æ•°
+	float dx;			// ã‚°ãƒªãƒƒãƒ‰ã®é–“éš”
+	float inv_dx;		// é–“éš”ã®é€†æ•°
 
-	// Î³»Ò
-	float p_restitution;// Î³»Ò¤ÎÈ¿È¯·¸¿ô
-	float p_vol;		// Î³»Ò¤ÎÂÎÀÑ
-	float p_mu;			// Î³»Ò¤Î¥é¥á·¸¿ô
-	float p_lambda;		// Î³»Ò¤Î¥é¥á·¸¿ô
+	// ç²’å­
+	float p_restitution;// ç²’å­ã®åç™ºä¿‚æ•°
+	float p_vol;		// ç²’å­ã®ä½“ç©
+	float p_mu;			// ç²’å­ã®ãƒ©ãƒ¡ä¿‚æ•°
+	float p_lambda;		// ç²’å­ã®ãƒ©ãƒ¡ä¿‚æ•°
 
-	float p_mass;		// Î³»Ò¤Î¼ÁÎÌ
-	float p_radius;		// Î³»Ò¤ÎÈ¾·Â
-	float p_overlap;	// Î³»Ò¤Î½Å¤Ê¤ê
-	float p_padding;	// Ä´À°
+	float p_mass;		// ç²’å­ã®è³ªé‡
+	float p_radius;		// ç²’å­ã®åŠå¾„
+	float p_overlap;	// ç²’å­ã®é‡ãªã‚Š
+	float p_padding;	// èª¿æ•´
 
-	// ¾ã³²Êª
-	vec4 obstacle_sphere; // ÀÅÅªÊªÂÎ¤Î²¾Àß
-	vec4 obstacle_velocity; // ÀÅÅªÊªÂÎ¤ÎÂ®ÅÙ
+	// éšœå®³ç‰©
+	vec4 obstacle_sphere; // é™çš„ç‰©ä½“ã®ä»®è¨­
+	vec4 obstacle_velocity; // é™çš„ç‰©ä½“ã®é€Ÿåº¦
 };
 
 void main() {
 	uint idx = gl_GlobalInvocationID.x;
 	if (idx >= p.length()) return;
 
-	// 1. °ÌÃÖ¤Î¹¹¿·
+	// 1. ä½ç½®ã®æ›´æ–°
 	vec3 v = p[idx].velocity.xyz;
 	vec3 pos = p[idx].position.xyz + v * timestep;
 
-	// 2. ¶­³¦¾ò·ï
+	// 2. å¢ƒç•Œæ¡ä»¶
 	/*
-	// ¥Ğ¥¦¥ó¥Ç¥£¥ó¥°¥Ü¥Ã¥¯¥¹¤Ç´Ê°×Åª¤Ë
+	// ãƒã‚¦ãƒ³ãƒ‡ã‚£ãƒ³ã‚°ãƒœãƒƒã‚¯ã‚¹ã§ç°¡æ˜“çš„ã«
 	float margin = dx * 2.0;
-    float grid_limit = (1.0 / inv_dx) * 126.0;	// 128^3 ¥°¥ê¥Ã¥É¤Ê¤Î¤Ç
+    float grid_limit = (1.0 / inv_dx) * 126.0;	// 128^3 ã‚°ãƒªãƒƒãƒ‰ãªã®ã§
 
-	// ³Æ¼´¤Ç¤Î¥¯¥é¥ó¥×
+	// å„è»¸ã§ã®ã‚¯ãƒ©ãƒ³ãƒ—
     if (pos.x < margin) { pos.x = margin; v.x = 0; }
     if (pos.y < margin) { pos.y = margin; v.y = 0; }
     if (pos.z < margin) { pos.z = margin; v.z = 0; }
 
-	// Å·°æ¤ä±ü¤ÎÊÉ¤Ê¤É¤Ç¤â²ÄÇ½¤À¤±¤É¤Ò¤È¤Ş¤º¤³¤ì¤Ç
+	// å¤©äº•ã‚„å¥¥ã®å£ãªã©ã§ã‚‚å¯èƒ½ã ã‘ã©ã²ã¨ã¾ãšã“ã‚Œã§
 	*/
 
 	p[idx].position.xyz = pos;

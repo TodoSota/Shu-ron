@@ -2,6 +2,7 @@
 #pragma comment(lib, "opengl32.lib")
 
 #include "core/Window.h"		// ウィンドウの生成から入力などの処理
+#include "core/Camera.h"		// 3D空間におけるカメラ位置
 #include "core/errorcheck.h"	// OepnGL のエラーチェック
 #include "core/shader.h"		// シェーダー読み込み処理
 #include "core/Object.h"		// 描画のためのデータパッケージ
@@ -19,10 +20,6 @@
 // 粒子数
 const auto PARTICLE_COUNT{ 10000 }; // ノートPCでやるには10000重いので
 const float worldScale = 0.67f;
-
-// <仮設>動く障害物
-float move_speed = 0.3f;
-float move_range = 0.8f;
 
 /// 点群データ作成
 /// @param[in] object 点群データを作成する対象のオブジェクト
@@ -308,23 +305,72 @@ auto main() -> int {
 	bool useDebugColor = false;         // デバッグカラーのON/OFFフラグ
 	bool spacePressedLastFrame = false; // 1フレーム前のキー状態（押しっぱなし判定用）
 
+	// インタラクティブ操作モード
+	int isFireMode = 0;                // 0: カメラ操作モード, 1: 球の発射モード
+	int lastMouseState = GLFW_RELEASE; // クリックされた瞬間を判定するため
+
+	// 描画空間におけるカメラ生成
+	Camera camera;
+
 	// ウィンドウ起動中
 	while (window) {
 		// 更新処理を行う
 		window.update();
 
-		float time = glfwGetTime();
+		// マウスでの視点移動を獲得
+		glm::dvec2 delta = window.getMouseDelta();
+		camera.rotate((float)delta.x, (float)delta.y);
 
-		// 移動速度と位置
-		float z_pos = -0.5f - (1.5 * move_range * sin(time * move_speed));
-		float z_vel = move_range * move_speed * cos(time * move_speed);
+		// スクロール量を取り出してズームに変換
+		double scrollDelta = window.getScrollDelta();
+		if (scrollDelta != 0.0) {
+			camera.zoom((float)scrollDelta);
+		}
 
-		mpmphysics.obstacle_sphere.y = z_pos;
-		mpmphysics.obstacle_velocity = glm::vec4(0.0f, z_vel, 0.0f, 0.0f);
+		// MVP行列の設定
+		glm::mat4 model = glm::mat4(1.0);// モデル変換行列を設定・モデルは回転させずに固定
+		glm::mat4 view = camera.getView();// ビュー変換行列を設定・カメラの現在位置を取得
+		glm::mat4 projection = camera.getProjection(window.getAspect());// 投影変換行列を設定
+		// 計算用
+		glm::mat4 invView = glm::inverse(view);
+		glm::mat4 invProj = glm::inverse(projection);
+
+		int currentState = glfwGetMouseButton(window.get(), GLFW_MOUSE_BUTTON_LEFT);
+
+		// クリックされた場所に球を飛ばすモード
+		if (isFireMode == 1) {
+			// ImGuiウィンドウ上ではなく、新しくクリックされた瞬間のみ反応
+			if (!ImGui::GetIO().WantCaptureMouse && currentState == GLFW_PRESS && lastMouseState == GLFW_RELEASE) {
+				// ウィンドウ(2D)上でのクリック位置(目的地)を取得
+				double xpos, ypos;
+				glfwGetCursorPos(window.get(), &xpos, &ypos);
+
+				// Ray を生成
+				float x = (2.0f * xpos) / window.getSize().x - 1.0f;	// -1～1 へ正規化
+				float y = 1.0f - (2.0f * ypos) / window.getSize().y;	// -1～1 へ正規化・y座標の扱いのため反転
+				glm::vec4 ray_clip = glm::vec4(x, y, -1.0f, 1.0f);		// 3D でのクリック位置座標に変換(OpenGLではウィンドウはサイズに関わらず正方形)
+				
+				// 3D シミュレート空間上での座標に変換・方向ベクトルを生成
+				glm::vec4 ray_eye = glm::inverse(projection) * ray_clip;// projectionの逆変換でカメラ空間へ戻す
+				ray_eye /= ray_eye.w;									// 変換により w が 1 でなくなるので補正(透視除算 : Perspective Division というらしい)
+				glm::vec4 ray_world = glm::inverse(view) * ray_eye;		// view の逆変換で 3D 空間の座標に戻す
+				glm::vec3 ray_origin = glm::vec3(ray_world);			// 飛んでいく目的地
+				glm::vec3 ray_dir = glm::normalize(ray_origin - camera.position);// 方向ベクトルの生成( 目的地 - 出発位置 )
+
+				// 3D空間上でのカメラ位置から光線方向へ発射
+				mpmphysics.obstacle_sphere = glm::vec4(ray_origin, mpmphysics.obstacle_sphere.w);
+				mpmphysics.obstacle_velocity = glm::vec4(ray_dir * 6.0f, 0.0f);	// 方向 * 速度
+			}
+		}
+
+		// 速度を位置に足して球を物理的に移動させる
+		mpmphysics.obstacle_sphere += mpmphysics.obstacle_velocity * mpmphysics.timestep;
 
 		glBindBuffer(GL_UNIFORM_BUFFER, ubo);
 		glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(MPMPhysics), &mpmphysics);
 		glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+		lastMouseState = currentState; // マウス状態の更新
 
 		// シェーダーストレージバッファオブジェクトを 0 番の結合ポイントに結合する
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mpmObj.vbo); // <MPM用>
@@ -371,12 +417,6 @@ auto main() -> int {
 		// プログラムオブジェクトを指定
 		glUseProgram(program);
 
-		// モデル変換行列を設定・ウィンドウ内のでマウスの動きから変換
-		const auto& model{ window.getModel(GLFW_MOUSE_BUTTON_LEFT) };
-		// ビュー変換行列を設定
-		const auto view{ glm::translate(glm::mat4(1.0f), glm::vec3(0.0f,0.0f,-3.0f)) };
-		// 投影変換行列を設定
-		const auto projection{ glm::perspective(glm::radians(60.0f), window.getAspect(), 1.0f, 10.0f) };
 		// uniform 変数 mc に値を設定
 		glUniformMatrix4fv(mcLoc, 1, GL_FALSE, glm::value_ptr(projection * view * model));
 
@@ -411,7 +451,7 @@ auto main() -> int {
 		glDrawElements(GL_TRIANGLES, obstacleMesh.indexCount, GL_UNSIGNED_INT, 0);
 		glBindVertexArray(0);
 
-		glBindVertexArray(0);
+		glBindVertexArray(0);	// 念のため
 
 		// OpenGL 周りのエラーがないかチェック
 		errorcheck();
@@ -446,6 +486,29 @@ auto main() -> int {
 		if (ImGui::Checkbox("Debug Color Mode (Space key)", &debugFlag)) {
 			window.setUseDebugColor(debugFlag);
 		}
+
+		// ▼ 追加：インタラクションモードの切り替え
+		ImGui::Separator();
+		ImGui::Text("Interaction Mode:");
+		ImGui::RadioButton("Camera Control", &isFireMode, 0); ImGui::SameLine();
+		ImGui::RadioButton("Shoot Sphere", &isFireMode, 1);
+		ImGui::Separator(); // 区切り線
+
+		ImGui::Text("Camera Settings:");
+		const char* modes[] = { "Orbit (俯瞰)", "FPS (主観)" };
+		int currentMode = (int)camera.mode;
+		if (ImGui::Combo("Camera Mode", &currentMode, modes, IM_ARRAYSIZE(modes))) {
+			camera.mode = (CameraMode)currentMode;
+			// モード切り替え時に位置を再計算
+			camera.updateVectors();
+		}
+		if (camera.mode == CameraMode::ORBIT) {
+			if (ImGui::SliderFloat("Orbit Radius", &camera.radius, 0.5f, 10.0f)) {
+				camera.updateVectors();	// 向いている方向をリセット
+			}
+		}
+		ImGui::Separator(); // 区切り線
+
 
 
 		// 「リスタート」ボタン

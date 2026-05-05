@@ -151,6 +151,7 @@
     <None Include="legacy\update.comp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\core\Camera.h" />
     <ClInclude Include="src\core\errorcheck.h" />
     <ClInclude Include="src\core\Mesh.h" />
     <ClInclude Include="src\mpm\mpmObject.h" />
