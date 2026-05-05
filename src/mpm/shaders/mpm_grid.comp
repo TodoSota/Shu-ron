@@ -1,40 +1,44 @@
 #version 430 core
 
-// 8*8*8 ‚ÌƒXƒŒƒbƒhƒOƒ‹[ƒv‚ÅƒOƒŠƒbƒh‘S‘Ì‚ğ‘–¸
+// 8*8*8 ã®ã‚¹ãƒ¬ãƒƒãƒ‰ã‚°ãƒ«ãƒ¼ãƒ—ã§ã‚°ãƒªãƒƒãƒ‰å…¨ä½“ã‚’èµ°æŸ»
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 
-// ƒeƒNƒXƒ`ƒƒ 4–‡
+// ãƒ†ã‚¯ã‚¹ãƒãƒ£ 4æš
 layout(r32ui, binding = 0) uniform uimage3D gridIMX;
 layout(r32ui, binding = 1) uniform uimage3D gridIMY;
 layout(r32ui, binding = 2) uniform uimage3D gridIMZ;
 layout(r32ui, binding = 3) uniform uimage3D gridIMA;
 
-// MPM‚Ì—±qŒQ‚Ì•¨—ƒpƒ‰ƒ[ƒ^
+// MPMã®ç²’å­ç¾¤ã®ç‰©ç†ãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿
 layout(std140, binding = 1) uniform MPMPhysics {
-	// ƒVƒ~ƒ…ƒŒ[ƒVƒ‡ƒ“‹óŠÔ
-	vec3 gravity;		// d—Í
-	float timestep;		// ŠÔŠÔŠu
-	vec3 f_normal;		// ’n–Ê‚Ì–@ü
-	float f_height;		// ’n–Ê‚Ì‚‚³
+	// ã‚·ãƒŸãƒ¥ãƒ¬ãƒ¼ã‚·ãƒ§ãƒ³ç©ºé–“
+	vec3 gravity;		// é‡åŠ›
+	float timestep;		// æ™‚é–“é–“éš”
+	vec3 f_normal;		// åœ°é¢ã®æ³•ç·š
+	float f_height;		// åœ°é¢ã®é«˜ã•
 	
-	float f_restitution;// ’n–Ê‚Ì”½”­ŒW”
-	float f_friction;	// ’n–Ê‚Ì–€CŒW”
-	float dx;			// ƒOƒŠƒbƒh‚ÌŠÔŠu
-	float inv_dx;		// ŠÔŠu‚Ì‹t”
+	float f_restitution;// åœ°é¢ã®åç™ºä¿‚æ•°
+	float f_friction;	// åœ°é¢ã®æ‘©æ“¦ä¿‚æ•°
+	float dx;			// ã‚°ãƒªãƒƒãƒ‰ã®é–“éš”
+	float inv_dx;		// é–“éš”ã®é€†æ•°
 
-	// —±q
-	float p_restitution;// —±q‚Ì”½”­ŒW”
-	float p_vol;		// —±q‚Ì‘ÌÏ
-	float p_mu;			// —±q‚Ìƒ‰ƒŒW”
-	float p_lambda;		// —±q‚Ìƒ‰ƒŒW”
+	// ç²’å­
+	float p_restitution;// ç²’å­ã®åç™ºä¿‚æ•°
+	float p_vol;		// ç²’å­ã®ä½“ç©
+	float p_mu;			// ç²’å­ã®ãƒ©ãƒ¡ä¿‚æ•°
+	float p_lambda;		// ç²’å­ã®ãƒ©ãƒ¡ä¿‚æ•°
 
-	float p_mass;		// —±q‚Ì¿—Ê
-	float p_radius;		// —±q‚Ì”¼Œa
-	float p_overlap;	// —±q‚Ìd‚È‚è
-	float p_padding;	// ’²®
+	float p_mass;		// ç²’å­ã®è³ªé‡
+	float p_radius;		// ç²’å­ã®åŠå¾„
+	float p_overlap;	// ç²’å­ã®é‡ãªã‚Š
+	float p_padding;	// èª¿æ•´
+
+	// éšœå®³ç‰©
+	vec4 obstacle_sphere; // é™çš„ç‰©ä½“ã®ä»®èª¬
+	vec4 obstacle_velocity; // é™çš„ç‰©ä½“ã®ä»®èª¬
 };
 
-// ƒrƒbƒg•ÏŠ·—p‚Ìƒwƒ‹ƒp[ŠÖ”
+// ãƒ“ãƒƒãƒˆå¤‰æ›ç”¨ã®ãƒ˜ãƒ«ãƒ‘ãƒ¼é–¢æ•°
 float uintToFloat(uint val) { return uintBitsToFloat(val); }
 uint floatToUint(float val) { return floatBitsToUint(val); }
 
@@ -42,12 +46,12 @@ void main() {
 	ivec3 coords = ivec3(gl_GlobalInvocationID.xyz);
 	ivec3 size = imageSize(gridIMX);
 
-	// ”ÍˆÍŠOƒAƒNƒZƒX–h~
+	// ç¯„å›²å¤–ã‚¢ã‚¯ã‚»ã‚¹é˜²æ­¢
     if (coords.x >= size.x || coords.y >= size.y || coords.z >= size.z) return;
 
-	// 1. ƒOƒŠƒbƒhƒf[ƒ^“Ç‚İ‚İ
+	// 1. ã‚°ãƒªãƒƒãƒ‰ãƒ‡ãƒ¼ã‚¿èª­ã¿è¾¼ã¿
 	float m = uintToFloat(imageLoad(gridIMA, coords).x);
-	if (m <= 1e-7) return;	// ¿—Ê‚ª‚Ù‚Úƒ[ƒ‚È‚çˆ—ƒXƒLƒbƒv
+	if (m <= 1e-7) return;	// è³ªé‡ãŒã»ã¼ã‚¼ãƒ­ãªã‚‰å‡¦ç†ã‚¹ã‚­ãƒƒãƒ—
 
 	vec3 v = vec3(
         uintToFloat(imageLoad(gridIMX, coords).x),
@@ -55,46 +59,86 @@ void main() {
         uintToFloat(imageLoad(gridIMZ, coords).x)
     );
 
-	// 2. ‘¬“xZo‚ÆŠO—Í(d—ÍŠÜ‚Ş)‚Ì“K—p
-	v /= m;						// ‰^“®—Ê‚ğ¿—Ê‚ÅŠ„‚é
-	v += gravity * timestep;	// d—Í‚ğ“K—p
+	// 2. é€Ÿåº¦ç®—å‡ºã¨å¤–åŠ›(é‡åŠ›å«ã‚€)ã®é©ç”¨
+	v /= m;						// é‹å‹•é‡ã‚’è³ªé‡ã§å‰²ã‚‹
+	v += gravity * timestep;	// é‡åŠ›ã‚’é©ç”¨
 
-	// 3. ‹«ŠEğŒE“–‚½‚è”»’è
-	vec3 pos = (vec3(coords) + vec3(0.5)) * dx;	// Œ»İ‚ÌƒZƒ‹‚Ì¢ŠEÀ•W‚ÌŒvZ
+	// 3. å¢ƒç•Œæ¡ä»¶ãƒ»å½“ãŸã‚Šåˆ¤å®š
+	vec3 pos = (vec3(coords) + vec3(0.5)) * dx;	// ç¾åœ¨ã®ã‚»ãƒ«ã®ä¸–ç•Œåº§æ¨™ã®è¨ˆç®—
 
-	float dist = dot(pos, f_normal) - f_height;	// °‚Æ‚Ì”»’èEƒOƒŠƒbƒh‚Å‚Ì”»’è‚È‚Ì‚ÅAƒm[ƒh‚ª°‚ğŠÑ’Ê‚µ‚Ä‚¢‚é‚Ì‚©‚ğŒ©‚Ä‚¢‚é
+	float dist = dot(pos, f_normal) - f_height;	// åºŠã¨ã®åˆ¤å®šãƒ»ã‚°ãƒªãƒƒãƒ‰ã§ã®åˆ¤å®šãªã®ã§ã€ãƒãƒ¼ãƒ‰ãŒåºŠã‚’è²«é€šã—ã¦ã„ã‚‹ã®ã‹ã‚’è¦‹ã¦ã„ã‚‹
 
-	// °‚æ‚è‰º‚È‚ç
+	// åºŠã‚ˆã‚Šä¸‹ãªã‚‰
 	if (dist < 0.0) {
-		float v_normal = dot(v, f_normal); // –@ü•ûŒü‚Ì¬•ª‚ğæ“¾
+		float v_normal = dot(v, f_normal); // æ³•ç·šæ–¹å‘ã®æˆåˆ†ã‚’å–å¾—
 
-		// ‰ºŒü‚«‚É—‰º‚µ‚Ä‚é‚È‚ç
+		// ä¸‹å‘ãã«è½ä¸‹ã—ã¦ã‚‹ãªã‚‰
 		if (v_normal < 0.0) {
-			vec3 vn = f_normal * v_normal;	// –@ü•ûŒü‚Ì‘¬“x
-			vec3 vt = v - vn;				// Úü•ûŒü‚Ì‘¬“x
+			vec3 vn = f_normal * v_normal;	// æ³•ç·šæ–¹å‘ã®é€Ÿåº¦
+			vec3 vt = v - vn;				// æ¥ç·šæ–¹å‘ã®é€Ÿåº¦
 
-			// –€C
+			// æ‘©æ“¦
 			float vt_len = length(vt);
 			if(vt_len > 1e-7){
 				float friction_factor = max(0.0, 1.0 - f_friction * abs(v_normal) / vt_len);
 				vt *= friction_factor;
 			}
 
-			// ‘¬“x‚ÌXV
+			// é€Ÿåº¦ã®æ›´æ–°
 			v = vt - f_restitution * vn;
 		}
 	}
 
 
 	//
-	// “®“I•¨‘Ì‚â‚»‚Ì‘¼“–‚½‚è”»’è‚ğs‚¤‚È‚ç‚±‚±
-	// –€C‚Ì•”•ª‚Íg‚¢‚Ü‚í‚¹‚é‚©‚à‚È‚Ì‚ÅA•K—v‚È‚çƒwƒ‹ƒp[ŠÖ”‚É‚·‚é
-	// SDF ‚ğg‚¤‚È‚çA‚±‚¿‚ç‚Å‚à dist ‚ğì¬‚µ‚Ä”»’è‚Å‚«‚éƒnƒY
+	// å‹•çš„ç‰©ä½“ã‚„ãã®ä»–å½“ãŸã‚Šåˆ¤å®šã‚’è¡Œã†ãªã‚‰ã“ã“
+	// æ‘©æ“¦ã®éƒ¨åˆ†ã¯ä½¿ã„ã¾ã‚ã›ã‚‹ã‹ã‚‚ãªã®ã§ã€å¿…è¦ãªã‚‰ãƒ˜ãƒ«ãƒ‘ãƒ¼é–¢æ•°ã«ã™ã‚‹
+	// SDF ã‚’ä½¿ã†ãªã‚‰ã€ã“ã¡ã‚‰ã§ã‚‚ dist ã‚’ä½œæˆã—ã¦åˆ¤å®šã§ãã‚‹ãƒã‚º
 	//
 
+	// SDF ã‚’è¿½åŠ ã™ã‚‹ãŸã‚ã®åˆ¤å®šãƒ­ã‚¸ãƒƒã‚¯éƒ¨åˆ†
+	vec3 sphere_center = obstacle_sphere.xyz;
+	float sphere_radius = obstacle_sphere.w;
 
-	// 4. XV‚³‚ê‚½ƒf[ƒ^‚ğ–ß‚·
-	// ¿—Ê‚ÍXV‚³‚ê‚Ä‚¢‚È‚¢‚Ì‚Å•s—v
+	// ä¸­å¿ƒã‹ã‚‰ç¾åœ¨ä½ç½®ã¸ã®ãƒ™ã‚¯ãƒˆãƒ«
+	vec3 to_pos = pos - sphere_center;
+	
+	// SDFã®è·é›¢è¨ˆç®—ï¼šä¸­å¿ƒã‹ã‚‰ã®è·é›¢ - åŠå¾„
+	float sdf_dist = length(to_pos) - sphere_radius;
+
+	// è·é›¢ãŒ0æœªæº€ï¼ˆçƒã®å†…éƒ¨ã«ã‚ã‚Šè¾¼ã‚“ã§ã„ã‚‹ï¼‰ãªã‚‰è¡çªå‡¦ç†
+	if (sdf_dist < 0.0) {
+		// çƒã®è¡¨é¢æ³•ç·šï¼ˆä¸­å¿ƒã‹ã‚‰å¤–å´ã¸å‘ã‹ã†æ­£è¦åŒ–ãƒ™ã‚¯ãƒˆãƒ«ï¼‰
+		vec3 normal = normalize(to_pos);
+		vec3 obs_vel = obstacle_velocity.xyz;
+
+		vec3 v_rel = v - obs_vel;
+		float v_normal = dot(v_rel, normal);
+		float push_out_v = (-sdf_dist / timestep) * 0.3;	// æŠ¼ã—å‡ºã™åŠ›(ç‰©ä½“ã«è§¦ã‚Œã¦ã„ã‚‹ã¨ãã¡ã‚‡ã£ã¨æ–¥åŠ›ã‚’ä¸ãˆã‚‹)
+
+		// çƒã®ä¸­å¿ƒã«å‘ã‹ã£ã¦é€²ã‚“ã§ã„ã‚‹ï¼ˆã‚ã‚Šè¾¼ã‚‚ã†ã¨ã—ã¦ã„ã‚‹ï¼‰å ´åˆã®ã¿
+		if (v_normal < 0.0) {
+			vec3 vn = normal * v_normal; // æ³•ç·šæ–¹å‘ã®é€Ÿåº¦
+			vec3 vt = v_rel - vn;        // æ¥ç·šæ–¹å‘ã®é€Ÿåº¦
+
+			// æ‘©æ“¦ã®é©ç”¨
+			float vt_len = length(vt);
+			if(vt_len > 1e-7){
+				float normal_force = abs(v_normal - push_out_v);	// æŠ¼ã—å‡ºã—ã«å¿…è¦ãªåŠ›
+				float friction_factor = max(0.0, 1.0 - f_friction * normal_force / vt_len);
+				vt *= friction_factor;
+			}
+			// åç™ºã¨æŠ¼ã—å‡ºã—ã®å¼·ã„æ–¹ã‚’æ¡ç”¨ã™ã‚‹
+			float final_vn = max(push_out_v, -v_normal * f_restitution);
+
+			// é€Ÿåº¦ã®æ›´æ–°ï¼ˆæ¥ç·šæ–¹å‘ã®é€Ÿåº¦ + åç™ºä¿‚æ•°ã«ã‚ˆã£ã¦æ¸›è¡°ã•ã›ãŸæ³•ç·šæ–¹å‘ã®æŠ¼ã—è¿”ã—ï¼‰
+			v_rel = vt + normal * final_vn;
+			v = v_rel + obs_vel;
+		}
+	}
+
+	// 4. æ›´æ–°ã•ã‚ŒãŸãƒ‡ãƒ¼ã‚¿ã‚’æˆ»ã™
+	// è³ªé‡ã¯æ›´æ–°ã•ã‚Œã¦ã„ãªã„ã®ã§ä¸è¦
 	imageStore(gridIMX, coords, uvec4(floatToUint(v.x * m)));
     imageStore(gridIMY, coords, uvec4(floatToUint(v.y * m)));
     imageStore(gridIMZ, coords, uvec4(floatToUint(v.z * m)));

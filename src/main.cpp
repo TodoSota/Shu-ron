@@ -1,10 +1,12 @@
-﻿// Windowsの OpenGL ライブラリをリンクする
+// Windowsの OpenGL ライブラリをリンクする
 #pragma comment(lib, "opengl32.lib")
 
 #include "core/Window.h"		// ウィンドウの生成から入力などの処理
+#include "core/Camera.h"		// 3D空間におけるカメラ位置
 #include "core/errorcheck.h"	// OepnGL のエラーチェック
 #include "core/shader.h"		// シェーダー読み込み処理
 #include "core/Object.h"		// 描画のためのデータパッケージ
+#include "core/Mesh.h"			// UV球のメッシュデータパッケージ
 #include "mpm/mpmObject.h"	// MPM 用の描画データパッケージ
 
 // 標準ライブラリ
@@ -17,7 +19,7 @@
 
 // 粒子数
 const auto PARTICLE_COUNT{ 10000 }; // ノートPCでやるには10000重いので
-const float worldScale = 1.0f;
+const float worldScale = 0.67f;
 
 /// 点群データ作成
 /// @param[in] object 点群データを作成する対象のオブジェクト
@@ -82,7 +84,7 @@ void generateMPMParticles(const mpmObject& object, float scale, bool sphere = tr
 	const auto position{ static_cast<mpmParticle*>(glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY)) };	// glMapBufferでGPUのものをCPUでいじりますと宣言
 
 	// 球状に配置する場合は、 0.0f～1.0f の範囲の一様乱数を生成
-	std::uniform_real_distribution<GLfloat> dist(0.0f, 1.0f);
+	std::uniform_real_distribution<GLfloat> dist(-1.0f, 1.0f);
 	// 立方体状に配置する場合 0.4f * scale ～ 0.6f * scale の範囲の一様乱数を生成
 	std::uniform_real_distribution<GLfloat> distCube(0.4f * scale, 0.6f * scale);
 
@@ -97,7 +99,8 @@ void generateMPMParticles(const mpmObject& object, float scale, bool sphere = tr
 
 			// 粒子を球状に配置する
 			position[i].position = { s * cos(t) + 0.5f, s * sin(t) + 0.5f, r * v + 0.5f, 1.0f };
-		} else {
+		}
+		else {
 			// 粒子を立方体状に配置
 			position[i].position = { distCube(engine), distCube(engine),distCube(engine), 1.0f };
 		}
@@ -112,6 +115,9 @@ void generateMPMParticles(const mpmObject& object, float scale, bool sphere = tr
 		position[i].state = 1;						// 状態1:弾性変形
 		position[i].scale = worldScale;				// スケール(グリッド書き込み時に値を拡大)
 		position[i].padding[0] = position[i].padding[1] = position[i].padding[2] = 0;//調整
+		// 石の色を少し混ぜる
+		std::uniform_real_distribution<GLfloat> matDist(0.0f, 1.0f);
+		position[i].padding[0] = (matDist(engine) < 0.05f) ? 1 : 0;
 	}
 
 	// バッファオブジェクトの結合を解除。GPUへの諸々操作も終了したしターゲティングも終わりと宣言
@@ -204,20 +210,6 @@ auto main() -> int {
 	// uniform 変数の設定
 	const auto mcLoc{ glGetUniformLocation(program, "mc") };	// mc の場所を取得
 
-	/* 既存の簡易シミュレーション
-	// 粒子の処理を初期化するコンピュートシェーダーのプログラムオブジェクトを作成
-	const auto setup{ loadCompute("setup.comp") };
-	// 粒子の衝突を処理するコンピュートシェーダーのプログラムオブジェクトを作成
-	const auto collide{ loadCompute("collide.comp") };
-	// 粒子の位置を更新するコンピュートシェーダーのプログラムオブジェクトを作成
-	const auto update{ loadCompute("update.comp") };
-	// プログラムオブジェクトの作成失敗なら
-	if (setup == 0 || collide == 0 || update == 0) {
-		std::cerr << "Can not create primitive simulator shader." << std::endl;
-		return EXIT_FAILURE;
-	}
-	*/
-	
 	// MPM シミュレーション
 	const auto mpmSetup{ loadCompute("src/mpm/shaders/mpm_setup.comp") };
 	const auto mpmP2G{ loadCompute("src/mpm/shaders/mpm_p2g.comp") };
@@ -231,6 +223,11 @@ auto main() -> int {
 	}
 
 	// 2. オブジェクトの作成
+	// UV球を準備
+	const auto meshProgram{ loadProgram("src/render/mesh.vert", "src/render/mesh.frag") };
+	MeshObject obstacleMesh(32, 16);	// 障害物(UV球)のポリゴン情報
+	glEnable(GL_DEPTH_TEST);
+
 	// 図形を作成
 	Object object(PARTICLE_COUNT);
 	generateParticles(object, 1.0f);
@@ -244,7 +241,7 @@ auto main() -> int {
 	const auto GRID_SIZE = 20;
 	Object floorObject(GRID_SIZE * GRID_SIZE);
 	// 地面用の点群データを生成し転送
-	std::vector<Particle> floorParticles(GRID_SIZE* GRID_SIZE);
+	std::vector<Particle> floorParticles(GRID_SIZE * GRID_SIZE);
 	for (int i = 0; i < GRID_SIZE; i++) {
 		for (int j = 0; j < GRID_SIZE; j++) {
 			float x = (i - GRID_SIZE / 2) * 0.2f;
@@ -257,81 +254,36 @@ auto main() -> int {
 	glBindBuffer(GL_ARRAY_BUFFER, floorObject.vbo);
 	glBufferSubData(GL_ARRAY_BUFFER, 0, floorParticles.size() * sizeof(Particle), floorParticles.data());
 
-	// 粒子群の物理パラメータ
-	struct Physics {
-		alignas(16) glm::vec3 gravity;				// 重力
-		alignas(4) GLfloat floor_height;			// 地面の高さ
-		alignas(16) glm::vec3 floor_normal;			// 地面の法線
-		alignas(4) GLfloat floor_restitution;		// 地面の反発係数
-		alignas(4) GLfloat particle_restitution;	// 粒子の反発係数
-		alignas(4) GLfloat mass;					// 粒子の質量
-		alignas(4) GLfloat radius;					// 粒子の半径
-		alignas(4) GLfloat overlap;					// 粒子の重なり
-		alignas(4) GLfloat timestep;				// 時間間隔
-	};
-
-	// MPMの粒子群の物理パラメータ
-	struct MPMPhysics {
-		// シミュレーション空間
-		alignas(16) glm::vec3 gravity;		// 重力
-		alignas(4) GLfloat timestep;		// 時間間隔
-		alignas(16) glm::vec3 f_normal;		// 地面の法線
-		alignas(4) GLfloat f_height;		// 地面の高さ
-		
-		alignas(4) GLfloat f_restitution;	// 地面の反発係数
-		alignas(4) GLfloat f_friction;		// 地面の摩擦係数
-		alignas(4) GLfloat dx;				// グリッドの間隔
-		alignas(4) GLfloat inv_dx;			// 間隔の逆数
-
-		// 粒子
-		alignas(4) GLfloat p_restitution;	// 粒子の反発係数
-		alignas(4) GLfloat p_vol;			// 粒子の体積
-		alignas(4) GLfloat p_mu;			// 粒子のラメ係数
-		alignas(4) GLfloat p_lambda;		// 粒子のラメ係数
-
-		alignas(4) GLfloat p_mass;			// 粒子の質量
-		alignas(4) GLfloat p_radius;		// 粒子の半径
-		alignas(4) GLfloat p_overlap;		// 粒子の重なり
-		alignas(4) GLfloat p_padding;		// 調整
-	};
-
 	// 各種材料の特性値とシミュレーションの設定
 	const float E_s = 3.537e5f;	// ヤング率
 	const float nu_s = 0.3f;	// ポアソン比
 	const float g_interval = worldScale / (float)N_GRID;	// グリッドの間隔
 
-	Physics physics{
-		{0.0f, -9.8f, 0.0f},//重力
-		-1.0f,				//地面の高さ
-		{0.0f, 1.0f, 0.0f},	// 地面の法線
-		0.5f,				// 地面の反発係数
-		0.2f,				// 粒子の反発係数
-		1.0f,				// 粒子の質量
-		0.1f,				// 粒子の半径
-		0.0001f,			// 粒子の重なり
-		1.0f / 60.0f,		// 時間間隔
-	};
-
+	// MPMObject で定義している構造体 : 空間における設定
 	MPMPhysics mpmphysics{
 		// シミュレーション空間
 		{0.0f, -9.8f, 0.0f},// 重力
 		1.0 / 1000.0f,		// 時間間隔
 		{0.0f, 1.0f, 0.0f},	// 地面の法線
-		0.0f,				// 地面の高さ
+		0.1f,				// 地面の高さ
 		0.5f,				// 地面の反発係数
 		0.6f,				// 地面の摩擦係数
 		g_interval,			// グリッドの間隔
-		1.0f / g_interval,			// 間隔の逆数
+		1.0f / g_interval,	// 間隔の逆数
 
 		// 粒子
 		0.2f,												// 粒子の反発係数
-		pow(g_interval * 0.5f, 3.0f),								// 粒子の体積
+		pow(g_interval * 0.5f, 3.0f),						// 粒子の体積
 		E_s / (2.0f * (1.0f + nu_s)),						// 粒子のラメ係数
 		E_s * nu_s / ((1.0f + nu_s) * (1.0f - 2.0f * nu_s)),// 粒子のラメ係数
-		(g_interval * 0.5f)* (g_interval * 0.5f)* (g_interval * 0.5f) * 400.0f,		// 粒子の質量
+		(g_interval * 0.5f) * (g_interval * 0.5f) * (g_interval * 0.5f) * 400.0f,// 粒子の質量
 		0.01f,												// 粒子の半径
 		0.0001f,											// 粒子の重なり
-		0													// 調整
+		0,													// 調整
+
+		// 障害物
+		{0.5f, 0.1f, 0.5f, 0.1f},
+		{0.0f, 0.0f, 0.0f, 0.0f}
 	};
 
 	// 粒子群の物理パラメータを格納するユニフォームバッファオブジェクト
@@ -353,26 +305,85 @@ auto main() -> int {
 	bool useDebugColor = false;         // デバッグカラーのON/OFFフラグ
 	bool spacePressedLastFrame = false; // 1フレーム前のキー状態（押しっぱなし判定用）
 
+	// インタラクティブ操作モード
+	int isFireMode = 0;                // 0: カメラ操作モード, 1: 球の発射モード
+	int lastMouseState = GLFW_RELEASE; // クリックされた瞬間を判定するため
+
+	// 描画空間におけるカメラ生成
+	Camera camera;
+
 	// ウィンドウ起動中
 	while (window) {
 		// 更新処理を行う
 		window.update();
 
+		// マウスでの視点移動を獲得
+		glm::dvec2 delta = window.getMouseDelta();
+		camera.rotate((float)delta.x, (float)delta.y);
+
+		// スクロール量を取り出してズームに変換
+		double scrollDelta = window.getScrollDelta();
+		if (scrollDelta != 0.0) {
+			camera.zoom((float)scrollDelta);
+		}
+
+		// MVP行列の設定
+		glm::mat4 model = glm::mat4(1.0);// モデル変換行列を設定・モデルは回転させずに固定
+		glm::mat4 view = camera.getView();// ビュー変換行列を設定・カメラの現在位置を取得
+		glm::mat4 projection = camera.getProjection(window.getAspect());// 投影変換行列を設定
+		// 計算用
+		glm::mat4 invView = glm::inverse(view);
+		glm::mat4 invProj = glm::inverse(projection);
+
+		int currentState = glfwGetMouseButton(window.get(), GLFW_MOUSE_BUTTON_LEFT);
+
+		// クリックされた場所に球を飛ばすモード
+		if (isFireMode == 1) {
+			// ImGuiウィンドウ上ではなく、新しくクリックされた瞬間のみ反応
+			if (!ImGui::GetIO().WantCaptureMouse && currentState == GLFW_PRESS && lastMouseState == GLFW_RELEASE) {
+				// ウィンドウ(2D)上でのクリック位置(目的地)を取得
+				double xpos, ypos;
+				glfwGetCursorPos(window.get(), &xpos, &ypos);
+
+				// Ray を生成
+				float x = (2.0f * xpos) / window.getSize().x - 1.0f;	// -1～1 へ正規化
+				float y = 1.0f - (2.0f * ypos) / window.getSize().y;	// -1～1 へ正規化・y座標の扱いのため反転
+				glm::vec4 ray_clip = glm::vec4(x, y, -1.0f, 1.0f);		// 3D でのクリック位置座標に変換(OpenGLではウィンドウはサイズに関わらず正方形)
+				
+				// 3D シミュレート空間上での座標に変換・方向ベクトルを生成
+				glm::vec4 ray_eye = glm::inverse(projection) * ray_clip;// projectionの逆変換でカメラ空間へ戻す
+				ray_eye /= ray_eye.w;									// 変換により w が 1 でなくなるので補正(透視除算 : Perspective Division というらしい)
+				glm::vec4 ray_world = glm::inverse(view) * ray_eye;		// view の逆変換で 3D 空間の座標に戻す
+				glm::vec3 ray_origin = glm::vec3(ray_world);			// 飛んでいく目的地
+				glm::vec3 ray_dir = glm::normalize(ray_origin - camera.position);// 方向ベクトルの生成( 目的地 - 出発位置 )
+
+				// 3D空間上でのカメラ位置から光線方向へ発射
+				mpmphysics.obstacle_sphere = glm::vec4(ray_origin, mpmphysics.obstacle_sphere.w);
+				mpmphysics.obstacle_velocity = glm::vec4(ray_dir * 6.0f, 0.0f);	// 方向 * 速度
+			}
+		}
+
+		// 速度を位置に足して球を物理的に移動させる
+		mpmphysics.obstacle_sphere += mpmphysics.obstacle_velocity * mpmphysics.timestep;
+
+		glBindBuffer(GL_UNIFORM_BUFFER, ubo);
+		glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(MPMPhysics), &mpmphysics);
+		glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+		lastMouseState = currentState; // マウス状態の更新
+
 		// シェーダーストレージバッファオブジェクトを 0 番の結合ポイントに結合する
-		//glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, object.vbo); // 通常
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mpmObj.vbo); // <MPM用>
 
 		// ユニフォームバッファオブジェクトを 1 番に結合
 		glBindBufferBase(GL_UNIFORM_BUFFER, 1, ubo);
-		
-		// 以下、MPMの計算部分 置換で一気にアクティブにして
-		
-		// <MPM用>3Dテクスチャを 0-3 番に結合
+
+		// 3Dテクスチャを 0-3 番に結合
 		glBindImageTexture(0, mpmObj.gridTexX, 0, GL_TRUE, 0, GL_READ_WRITE, GL_R32UI);
 		glBindImageTexture(1, mpmObj.gridTexY, 0, GL_TRUE, 0, GL_READ_WRITE, GL_R32UI);
 		glBindImageTexture(2, mpmObj.gridTexZ, 0, GL_TRUE, 0, GL_READ_WRITE, GL_R32UI);
 		glBindImageTexture(3, mpmObj.gridTexA, 0, GL_TRUE, 0, GL_READ_WRITE, GL_R32UI);
-		
+
 
 		// [mpm_setup] グリッドのリセット
 		glUseProgram(mpmSetup);
@@ -399,25 +410,6 @@ auto main() -> int {
 		glUseProgram(mpmMove);
 		glDispatchCompute((mpmObj.count + 63) / 64, 1, 1);
 		glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
-		
-
-		/*
-		// 以下、粒子シミュレート分
-		// 
-		// 初期化のコンピュートシェーダー
-		glUseProgram(setup);
-		glDispatchCompute(object.count, 1, 1);// 計算を実行
-		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);// 書き込み完了待ち
-
-		// 粒子の衝突のコンピュートシェーダー
-		glUseProgram(collide);
-		glDispatchCompute(object.count, 1, 1);// 計算を実行
-		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);// 書き込み完了待ち
-
-		// 位置更新のコンピュートシェーダー
-		glUseProgram(update);
-		glDispatchCompute(object.count, 1, 1);// 計算を実行
-		*/
 
 		// ウィンドウを消去(カラー/デプスバッファを初期状態に)
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -425,12 +417,6 @@ auto main() -> int {
 		// プログラムオブジェクトを指定
 		glUseProgram(program);
 
-		// モデル変換行列を設定・ウィンドウ内のでマウスの動きから変換
-		const auto& model{ window.getModel(GLFW_MOUSE_BUTTON_LEFT) };
-		// ビュー変換行列を設定
-		const auto view{ glm::translate(glm::mat4(1.0f), glm::vec3(0.0f,0.0f,-3.0f)) };
-		// 投影変換行列を設定
-		const auto projection{ glm::perspective(glm::radians(60.0f), window.getAspect(), 1.0f, 10.0f) };
 		// uniform 変数 mc に値を設定
 		glUniformMatrix4fv(mcLoc, 1, GL_FALSE, glm::value_ptr(projection * view * model));
 
@@ -438,27 +424,34 @@ auto main() -> int {
 		glUniform3fv(glGetUniformLocation(program, "floor_normal"), 1, glm::value_ptr(mpmphysics.f_normal));
 		glUniform1f(glGetUniformLocation(program, "floor_height"), mpmphysics.f_height);
 		GLint isFloorLocation = glGetUniformLocation(program, "is_floor");
+		glUniform1i(isFloorLocation, 1); // 地面フラグ on
+		glBindVertexArray(floorObject.vao);
+		glDrawArrays(GL_POINTS, 0, floorObject.count);
 
-		/*
-		// 粒子の描画
-		glUniform1i(isFloorLocation, 0); // 地面フラグ off
-		glBindVertexArray(object.vao);
-		glDrawArrays(GL_POINTS, 0, object.count);
-		*/
-		
+
 		// MPM 結果の描画
 		glUniform1i(isFloorLocation, 0); // 地面フラグ off
 		glUniform1i(glGetUniformLocation(program, "use_debug_color"), window.getUseDebugColor() ? 1 : 0); // デバッグモード起動中かどうか
 		glBindVertexArray(mpmObj.vao);
 		glDrawArrays(GL_POINTS, 0, mpmObj.count);
-		
 
-		// 地面の描画
-		glUniform1i(isFloorLocation, 1); // 地面フラグ on
-		glBindVertexArray(floorObject.vao);
-		glDrawArrays(GL_POINTS, 0, floorObject.count);
+		// 障害物の描画
+		glUseProgram(meshProgram);
+		glm::vec3 spherePos = glm::vec3(mpmphysics.obstacle_sphere);// 球の位置とサイズをシミュレーションデータから取得
+		float sphereRadius = mpmphysics.obstacle_sphere.w;
+		glm::mat4 objModel = 
+			glm::translate(glm::mat4(1.0f), spherePos)* glm::scale(glm::mat4(1.0f), glm::vec3(sphereRadius));// モデル行列の作成（平行移動 × 拡大縮小）
+		glm::mat4 sphereModel = model * objModel;	// マウスの回転も含めた model を作成
+		glm::mat4 mvp = projection * view *sphereModel;		// MVP行列を計算してシェーダーに送信
+		glUniformMatrix4fv(glGetUniformLocation(meshProgram, "mc"), 1, GL_FALSE, glm::value_ptr(mvp));
+		glUniformMatrix4fv(glGetUniformLocation(meshProgram, "model"), 1, GL_FALSE, glm::value_ptr(sphereModel));
 
+		// メッシュを描画
+		glBindVertexArray(obstacleMesh.vao);
+		glDrawElements(GL_TRIANGLES, obstacleMesh.indexCount, GL_UNSIGNED_INT, 0);
 		glBindVertexArray(0);
+
+		glBindVertexArray(0);	// 念のため
 
 		// OpenGL 周りのエラーがないかチェック
 		errorcheck();
@@ -479,7 +472,7 @@ auto main() -> int {
 		ImGui::SliderFloat("Floor Restitution", &mpmphysics.f_restitution, 0.0f, 1.0f);
 		ImGui::SliderFloat("Floor Friction", &mpmphysics.f_friction, 0.0f, 1.0f);
 		ImGui::SliderFloat("dx", &mpmphysics.dx, 0.0f, 1.0f);
-		ImGui::SliderFloat("inv_dx", &mpmphysics.inv_dx, 0.0f, N_GRID*2);
+		ImGui::SliderFloat("inv_dx", &mpmphysics.inv_dx, 0.0f, N_GRID * 2);
 		ImGui::SliderFloat("Particle Restitution", &mpmphysics.p_restitution, 0.0f, 1.0f);
 		ImGui::SliderFloat("Particle vol", &mpmphysics.p_vol, 0.0f, 1.0f);
 		//ImGui::SliderFloat("Particle mu", &mpmphysics.p_mu, 0.0f, 1.0f);
@@ -493,7 +486,30 @@ auto main() -> int {
 		if (ImGui::Checkbox("Debug Color Mode (Space key)", &debugFlag)) {
 			window.setUseDebugColor(debugFlag);
 		}
-		
+
+		// ▼ 追加：インタラクションモードの切り替え
+		ImGui::Separator();
+		ImGui::Text("Interaction Mode:");
+		ImGui::RadioButton("Camera Control", &isFireMode, 0); ImGui::SameLine();
+		ImGui::RadioButton("Shoot Sphere", &isFireMode, 1);
+		ImGui::Separator(); // 区切り線
+
+		ImGui::Text("Camera Settings:");
+		const char* modes[] = { "Orbit (俯瞰)", "FPS (主観)" };
+		int currentMode = (int)camera.mode;
+		if (ImGui::Combo("Camera Mode", &currentMode, modes, IM_ARRAYSIZE(modes))) {
+			camera.mode = (CameraMode)currentMode;
+			// モード切り替え時に位置を再計算
+			camera.updateVectors();
+		}
+		if (camera.mode == CameraMode::ORBIT) {
+			if (ImGui::SliderFloat("Orbit Radius", &camera.radius, 0.5f, 10.0f)) {
+				camera.updateVectors();	// 向いている方向をリセット
+			}
+		}
+		ImGui::Separator(); // 区切り線
+
+
 
 		// 「リスタート」ボタン
 		if (ImGui::Button("Restart Simulation")) {

@@ -1,60 +1,64 @@
 #version 430 core
 
-// 1ƒOƒ‹[ƒv 64ƒXƒŒƒbƒh
+// 1¥°¥ë¡¼¥× 64¥¹¥ì¥Ã¥É
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
-// ƒeƒNƒXƒ`ƒƒ 4–‡
+// ¥Æ¥¯¥¹¥Á¥ã 4Ëç
 layout(r32ui, binding = 0) uniform uimage3D gridIMX;
 layout(r32ui, binding = 1) uniform uimage3D gridIMY;
 layout(r32ui, binding = 2) uniform uimage3D gridIMZ;
 layout(r32ui, binding = 3) uniform uimage3D gridIMA;
 
-// —±q‚Ìƒf[ƒ^\‘¢
+// Î³»Ò¤Î¥Ç¡¼¥¿¹½Â¤
 struct mpmParticle {
-	vec4 position;		// ˆÊ’u
-	vec4 velocity;		// ‘¬“x + padding
-	mat4 affineC;		//ƒAƒtƒBƒ“‘¬“xs—ñ (mat3 •ª‚Ì‚İ’l‚ ‚è)
-	mat4 deformation;	// •ÏŒ`Œù”z (mat3 •ª‚Ì‚İ’l‚ ‚è)
+	vec4 position;		// °ÌÃÖ
+	vec4 velocity;		// Â®ÅÙ + padding
+	mat4 affineC;		//¥¢¥Õ¥£¥óÂ®ÅÙ¹ÔÎó (mat3 Ê¬¤Î¤ßÃÍ¤¢¤ê)
+	mat4 deformation;	// ÊÑ·Á¸ûÇÛ (mat3 Ê¬¤Î¤ßÃÍ¤¢¤ê)
 
-	// »‚Ì‘Y«•ÏŒ`ƒpƒ‰ƒ[ƒ^[
-	 float alpha;		//~•š–Ê‚Ì‘å‚«‚³
-	 float q;			//d‰»ó‘Ô
-	 float vc;			//•Ï‰»‚ÌÛ‚Ì‘ÌÏ•Ï‰»
-	 int state;			//ó‘Ô(•Ï‰»)
-	 int scale;			//ƒXƒP[ƒ‹
-	 int padding[3];		//’²®
+	// º½¤ÎÁºÀ­ÊÑ·Á¥Ñ¥é¥á¡¼¥¿¡¼
+	 float alpha;		//¹ßÉúÌÌ¤ÎÂç¤­¤µ
+	 float q;			//¹Å²½¾õÂÖ
+	 float vc;			//ÊÑ²½¤Îºİ¤ÎÂÎÀÑÊÑ²½
+	 int state;			//¾õÂÖ(ÊÑ²½)
+	 int scale;			//¥¹¥±¡¼¥ë
+	 int padding[3];		//Ä´À°
 };
 
 layout(std430, binding = 0) buffer mpmBuffer {
 	mpmParticle p[];
 };
 
-// MPM‚Ì—±qŒQ‚Ì•¨—ƒpƒ‰ƒ[ƒ^
+// MPM¤ÎÎ³»Ò·²¤ÎÊªÍı¥Ñ¥é¥á¡¼¥¿
 layout(std140, binding = 1) uniform MPMPhysics {
-	// ƒVƒ~ƒ…ƒŒ[ƒVƒ‡ƒ“‹óŠÔ
-	vec3 gravity;		// d—Í
-	float timestep;		// ŠÔŠÔŠu
-	vec3 f_normal;		// ’n–Ê‚Ì–@ü
-	float f_height;		// ’n–Ê‚Ì‚‚³
+	// ¥·¥ß¥å¥ì¡¼¥·¥ç¥ó¶õ´Ö
+	vec3 gravity;		// ½ÅÎÏ
+	float timestep;		// »ş´Ö´Ö³Ö
+	vec3 f_normal;		// ÃÏÌÌ¤ÎË¡Àş
+	float f_height;		// ÃÏÌÌ¤Î¹â¤µ
 	
-	float f_restitution;// ’n–Ê‚Ì”½”­ŒW”
-	float f_friction;	// ’n–Ê‚Ì–€CŒW”
-	float dx;			// ƒOƒŠƒbƒh‚ÌŠÔŠu
-	float inv_dx;		// ŠÔŠu‚Ì‹t”
+	float f_restitution;// ÃÏÌÌ¤ÎÈ¿È¯·¸¿ô
+	float f_friction;	// ÃÏÌÌ¤ÎËà»¤·¸¿ô
+	float dx;			// ¥°¥ê¥Ã¥É¤Î´Ö³Ö
+	float inv_dx;		// ´Ö³Ö¤ÎµÕ¿ô
 
-	// —±q
-	float p_restitution;// —±q‚Ì”½”­ŒW”
-	float p_vol;		// —±q‚Ì‘ÌÏ
-	float p_mu;			// —±q‚Ìƒ‰ƒŒW”
-	float p_lambda;		// —±q‚Ìƒ‰ƒŒW”
+	// Î³»Ò
+	float p_restitution;// Î³»Ò¤ÎÈ¿È¯·¸¿ô
+	float p_vol;		// Î³»Ò¤ÎÂÎÀÑ
+	float p_mu;			// Î³»Ò¤Î¥é¥á·¸¿ô
+	float p_lambda;		// Î³»Ò¤Î¥é¥á·¸¿ô
 
-	float p_mass;		// —±q‚Ì¿—Ê
-	float p_radius;		// —±q‚Ì”¼Œa
-	float p_overlap;	// —±q‚Ìd‚È‚è
-	float p_padding;	// ’²®
+	float p_mass;		// Î³»Ò¤Î¼ÁÎÌ
+	float p_radius;		// Î³»Ò¤ÎÈ¾·Â
+	float p_overlap;	// Î³»Ò¤Î½Å¤Ê¤ê
+	float p_padding;	// Ä´À°
+
+	// ¾ã³²Êª
+	vec4 obstacle_sphere; // ÀÅÅªÊªÂÎ¤Î²¾Àß
+	vec4 obstacle_velocity; // ÀÅÅªÊªÂÎ¤ÎÂ®ÅÙ
 };
 
-// AtomicAdd ‚ğ Image ‚É‚Äs‚¤
+// AtomicAdd ¤ò Image ¤Ë¤Æ¹Ô¤¦
 void atomicAddFloatX(ivec3 coords, float val) {
     uint oldVal = imageLoad(gridIMX, coords).x;
     uint newVal, expectedVal;
@@ -92,11 +96,11 @@ void atomicAddFloatA(ivec3 coords, float val) {
     } while (oldVal != expectedVal);
 }
 
-// ŒÅ—L’l•ª‰ğ
+// ¸ÇÍ­ÃÍÊ¬²ò
 void jacobiEigen(inout mat3 S, out mat3 V) {
     V = mat3(1.0);
 
-	// À—pã‚Í 3-5 ‰ñ‚Å\•ª (3 ‚ğ 5 ‚É•Ï‚¦‚Ä‚à‰Â)
+	// ¼ÂÍÑ¾å¤Ï 3-5 ²ó¤Ç½½Ê¬ (3 ¤ò 5 ¤ËÊÑ¤¨¤Æ¤â²Ä)
     for (int iter = 0; iter < 3; ++iter) {
         for (int p = 0; p < 2; ++p)
         for (int q = p + 1; q < 3; ++q) {
@@ -121,14 +125,14 @@ void jacobiEigen(inout mat3 S, out mat3 V) {
     }
 }
 
-// “ÁˆÙ’l•ª‰ğ
+// ÆÃ°ÛÃÍÊ¬²ò
 void svd(mat3 F, out mat3 U, out mat3 Sigma, out mat3 V) {
     mat3 S = transpose(F) * F;
 
     jacobiEigen(S, V);
 
     Sigma = mat3(0.0);
-	// ƒ[ƒœZ‚Ì‹°‚ê‚ª‚ ‚é‚Ì‚ÅA”÷¬‚È’l‚ğ‘«‚·(ƒGƒvƒVƒƒ“)
+	// ¥¼¥í½ü»»¤Î¶²¤ì¤¬¤¢¤ë¤Î¤Ç¡¢Èù¾®¤ÊÃÍ¤òÂ­¤¹(¥¨¥×¥·¥í¥ó)
     Sigma[0][0] = sqrt(max(S[0][0], 1e-4));
     Sigma[1][1] = sqrt(max(S[1][1], 1e-4));
     Sigma[2][2] = sqrt(max(S[2][2], 1e-4));
@@ -147,9 +151,9 @@ void main() {
 	uint idx = gl_GlobalInvocationID.x;
 	if (idx >= p.length()) return;
 
-	// À•W‚ÆƒCƒ“ƒfƒbƒNƒXŒvZ
-	vec3 x = p[idx].position.xyz;	// —±qˆÊ’u‚ğŠl“¾
-	// À¬•ª‚Ì’Šo
+	// ºÂÉ¸¤È¥¤¥ó¥Ç¥Ã¥¯¥¹·×»»
+	vec3 x = p[idx].position.xyz;	// Î³»Ò°ÌÃÖ¤ò³ÍÆÀ
+	// ¼ÂÀ®Ê¬¤ÎÃê½Ğ
 	vec3 v = p[idx].velocity.xyz;
 	mat3 F = mat3(p[idx].deformation);
 	mat3 C = mat3(p[idx].affineC);
@@ -158,13 +162,13 @@ void main() {
 	ivec3 base = ivec3(floor(fx - 0.5));
 	vec3 weight_dist = fx - vec3(base);
 
-	// 2ŸBƒXƒvƒ‰ƒCƒ“•âŠÔ
+	// 2¼¡B¥¹¥×¥é¥¤¥óÊä´Ö
 	vec3 w[3];
 	w[0] = 0.5 * pow( 1.5 - weight_dist, vec3(2.0));
 	w[1] = 0.75 - pow( weight_dist - 1.0, vec3(2.0));
 	w[2] = 0.5 * pow( weight_dist - 0.5, vec3(2.0));
 
-	// ‰—Í‚ÌŒvZ SVD(“ÁˆÙ’l•ª‰ğ)
+	// ±şÎÏ¤Î·×»» SVD(ÆÃ°ÛÃÍÊ¬²ò)
 	mat3 U, sig, V;
 	svd(F, U, sig, V);
 
@@ -175,30 +179,30 @@ void main() {
 	float trace_e = e[0][0] + e[1][1] + e[2][2];
 
 	mat3 stress_diag = 2.0 * p_mu * e + p_lambda * trace_e * mat3(1.0);
-	mat3 stress = U * stress_diag * transpose(V);	// Piola-Kirchoff‰—Í‚Ì‹ß—‚ğˆµ‚¤Œ`®‚ğ—˜—p(Œµ–§‚É‚·‚é‚È‚ç strees_diag ‚É inverse(sig) ‚µ‚½‚à‚Ì‚ğŠ|‚¯‚È‚¯‚ê‚Î‚È‚ç‚È‚¢)
-	// <’Ç‹L> Œµ–§‚³‚ğ(lŠÔ‚Ì–Ú‚É‚Í‚í‚©‚ç‚È‚¢’ö“x‚É‚Í)“ñ‚ÌŸ‚É‚µ‚Ä‚¢‚é‚Ì‚Åƒ„ƒ“ƒO—¦‚È‚Ç‚Å’²®‚·‚é•ûŒü«‚É‚·‚é
+	mat3 stress = U * stress_diag * transpose(V);	// Piola-Kirchoff±şÎÏ¤Î¶á»÷¤ò°·¤¦·Á¼°¤òÍøÍÑ(¸·Ì©¤Ë¤¹¤ë¤Ê¤é strees_diag ¤Ë inverse(sig) ¤·¤¿¤â¤Î¤ò³İ¤±¤Ê¤±¤ì¤Ğ¤Ê¤é¤Ê¤¤)
+	// <ÄÉµ­> ¸·Ì©¤µ¤ò(¿Í´Ö¤ÎÌÜ¤Ë¤Ï¤ï¤«¤é¤Ê¤¤ÄøÅÙ¤Ë¤Ï)Æó¤Î¼¡¤Ë¤·¤Æ¤¤¤ë¤Î¤Ç¥ä¥ó¥°Î¨¤Ê¤É¤ÇÄ´À°¤¹¤ëÊı¸şÀ­¤Ë¤¹¤ë
 
 	stress = (-p_vol * 4.0 * inv_dx * inv_dx) * stress * transpose(F);
 
-	// ƒOƒŠƒbƒh‚Ö“]‘—
+	// ¥°¥ê¥Ã¥É¤ØÅ¾Á÷
 	mat3 affine = p_mass * C; // MLS_MPM
 	for (int i=0; i<3; i++) {
 		for (int j=0; j<3; j++) {
 			for (int k=0; k<3; k++) {
 				ivec3 offset = ivec3(i, j, k);
-				ivec3 node_coords = base + offset;	// ¡‰ñ‚Ì‘‚«‚İæ
+				ivec3 node_coords = base + offset;	// º£²ó¤Î½ñ¤­¹ş¤ßÀè
 				if (any(lessThan(node_coords, ivec3(0))) || any(greaterThanEqual(node_coords, imageSize(gridIMX)))) {
-					continue; // ”ÍˆÍŠO‚Ìƒm[ƒh‚Ö‚Ì‰ÁZ‚ğƒXƒLƒbƒv
+					continue; // ÈÏ°Ï³°¤Î¥Î¡¼¥É¤Ø¤Î²Ã»»¤ò¥¹¥­¥Ã¥×
 				}
 				vec3 dpos = ( (vec3(offset) - weight_dist) * dx);
-				float weight = w[i].x * w[j].y * w[k].z;	// BƒXƒvƒ‰ƒCƒ“‚ÍÏ
+				float weight = w[i].x * w[j].y * w[k].z;	// B¥¹¥×¥é¥¤¥ó¤ÏÀÑ
 
-				// ‰^“®—Ê‚Ì‰ÁZ ( ¿—Ê * ‘¬“x + ƒAƒtƒBƒ“€ )
+				// ±¿Æ°ÎÌ¤Î²Ã»» ( ¼ÁÎÌ * Â®ÅÙ + ¥¢¥Õ¥£¥ó¹à )
 				vec3 mom_contrib = weight * (p_mass * v + affine * dpos);
-				// ‰—Í‚É‚æ‚é—Í‚Ì‰ÁZ
+				// ±şÎÏ¤Ë¤è¤ëÎÏ¤Î²Ã»»
 				vec3 force_contrib = weight * (stress * dpos);
 
-				// ‡Œv‚ğ AtomicAdd
+				// ¹ç·×¤ò AtomicAdd
 				vec3 total_mom = mom_contrib + timestep * force_contrib;
 
 				atomicAddFloatX(node_coords, total_mom.x);

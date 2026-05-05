@@ -1,16 +1,16 @@
 #pragma once
 
-// OpenGLŠÖ˜A
-#include <GL/glew.h>	// glewg—p‚ÉÛ‚µ‚Ä“ü‚ê‚Ä‚¨‚©‚È‚¢‚Æ‚¢‚¯‚È‚¢
-#include <GLFW/glfw3.h> // ƒEƒBƒ“ƒhƒEü‚è‚Ì‹@”\‚ğ’ñ‹Ÿ(OpenGL‚¾‚¯‚Å‚Í‚»‚Ì‚ ‚½‚è‚ÌƒTƒ|[ƒg‚Í‚È‚¢)
+// OpenGLé–¢é€£
+#include <GL/glew.h>	// glewä½¿ç”¨ã«éš›ã—ã¦å…¥ã‚Œã¦ãŠã‹ãªã„ã¨ã„ã‘ãªã„
+#include <GLFW/glfw3.h> // ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦å‘¨ã‚Šã®æ©Ÿèƒ½ã‚’æä¾›(OpenGLã ã‘ã§ã¯ãã®ã‚ãŸã‚Šã®ã‚µãƒãƒ¼ãƒˆã¯ãªã„)
 
-// GLM‚Ü‚í‚è
-#define _USE_MATH_DEFINES	//M_PI‚È‚Ç‚ğg—p‰Â”\‚É
-#define GLM_FORCE_RADIANS	//GLM‚ÌŠp“x‚ğ“x‚Ì’PˆÊ‚Å‚È‚­ƒ‰ƒWƒAƒ“‚Ì’PˆÊ‚É(‚à‚Æ‚à‚ÆˆÃ–Ù“I‚Å•´‚ç‚í‚µ‚¢‚ç‚µ‚¢)
-#include <GLM/glm.hpp>		//OpenGLŒü‚¯‚ÌC++”Šwƒ‰ƒCƒuƒ‰ƒŠ
+// GLMã¾ã‚ã‚Š
+#define _USE_MATH_DEFINES	//M_PIãªã©ã‚’ä½¿ç”¨å¯èƒ½ã«
+#define GLM_FORCE_RADIANS	//GLMã®è§’åº¦ã‚’åº¦ã®å˜ä½ã§ãªããƒ©ã‚¸ã‚¢ãƒ³ã®å˜ä½ã«(ã‚‚ã¨ã‚‚ã¨æš—é»™çš„ã§ç´›ã‚‰ã‚ã—ã„ã‚‰ã—ã„)
+#include <GLM/glm.hpp>		//OpenGLå‘ã‘ã®C++æ•°å­¦ãƒ©ã‚¤ãƒ–ãƒ©ãƒª
 #include <GLM/gtc/quaternion.hpp>
 
-// ImGui ‚Ì‘g‚İ‚İ
+// ImGui ã®çµ„ã¿è¾¼ã¿
 #define USE_IMGUI true
 #if USE_IMGUI
 #	include "../ImGui/imgui.h"
@@ -18,324 +18,355 @@
 #	include "../ImGui/imgui_impl_opengl3.h"
 #endif
 
-// •W€ƒ‰ƒCƒuƒ‰ƒŠ
+// æ¨™æº–ãƒ©ã‚¤ãƒ–ãƒ©ãƒª
 #include <array>
 
 //
-// ƒEƒBƒ“ƒhƒEŠÖ˜A‚Ìˆ—ƒNƒ‰ƒX
+// ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦é–¢é€£ã®å‡¦ç†ã‚¯ãƒ©ã‚¹
 //
 class Window
 {
-	/// ƒEƒBƒ“ƒhƒE‚Ì¯•Êq
-	GLFWwindow* const window;	// ˆê“xŠJ‚¢‚½ƒEƒBƒ“ƒhƒE‚Í”pŠü‚·‚é‚Ü‚Å•Û‚·‚é‚Ì‚Åconst
+	/// ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã®è­˜åˆ¥å­
+	GLFWwindow* const window;	// ä¸€åº¦é–‹ã„ãŸã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã¯å»ƒæ£„ã™ã‚‹ã¾ã§ä¿æŒã™ã‚‹ã®ã§const
 
-	/// ƒEƒBƒ“ƒhƒE‚ÌƒTƒCƒY
-	glm::dvec2 size;			// dvec‚È‚Ì‚ÅdoubleŒ^
+	/// ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã®ã‚µã‚¤ã‚º
+	glm::dvec2 size;			// dvecãªã®ã§doubleå‹
 
-	/// ‘€ì‚µ‚Ä‚¢‚éƒ}ƒEƒXƒ{ƒ^ƒ“
+	/// æ“ä½œã—ã¦ã„ã‚‹ãƒã‚¦ã‚¹ãƒœã‚¿ãƒ³
 	int button{ -1 };
 
-	/// ƒ{ƒ^ƒ“‚²‚Æ‚Ìƒ}ƒEƒXƒ{ƒ^ƒ“‚ğ‰Ÿ‚µ‚½ˆÊ’u
+	/// ãƒœã‚¿ãƒ³ã”ã¨ã®ãƒã‚¦ã‚¹ãƒœã‚¿ãƒ³ã‚’æŠ¼ã—ãŸä½ç½®
 	std::array<glm::dvec2, GLFW_MOUSE_BUTTON_LAST + 1> start{};
 
-	/// ƒ{ƒ^ƒ“‚²‚Æ‚Ì‰ñ“]
+	/// ãƒœã‚¿ãƒ³ã”ã¨ã®å›è»¢
 	std::array<glm::dquat, GLFW_MOUSE_BUTTON_LAST + 1> rotation{};
 
-	/// ƒ{ƒ^ƒ“‚²‚Æ‚Ìƒ‚ƒfƒ‹•ÏŠ·s—ñ
+	/// ãƒœã‚¿ãƒ³ã”ã¨ã®ãƒ¢ãƒ‡ãƒ«å¤‰æ›è¡Œåˆ—
 	std::array<glm::mat4, GLFW_MOUSE_BUTTON_LAST + 1> model{};
 
-	/// ƒgƒ‰ƒbƒNƒ{[ƒ‹ˆ—‚Ì“r’†Œo‰ß
+	/// ãƒˆãƒ©ãƒƒã‚¯ãƒœãƒ¼ãƒ«å‡¦ç†ã®é€”ä¸­çµŒé
 	glm::dquat trackball{};
 
-	// ƒ}ƒEƒXƒzƒC[ƒ‹‚Ì‰ñ“]—Ê
+	// ãƒã‚¦ã‚¹ãƒ›ã‚¤ãƒ¼ãƒ«ã®å›è»¢é‡
 	glm::dvec2 scroll{ 0.0, 0.0 };
 
-	// ƒfƒoƒbƒNƒJƒ‰[•\¦ƒtƒ‰ƒO
+	// å›è»¢å‰ã®ä½ç½®
+	glm::dvec2 lastPos{ 0.0, 0.0 };
+
+	// ãƒ‡ãƒãƒƒã‚¯ã‚«ãƒ©ãƒ¼è¡¨ç¤ºãƒ•ãƒ©ã‚°
 	bool useDebugColor{ false };
 
-	/// ƒEƒBƒ“ƒhƒEƒTƒCƒY•ÏX‚Ìˆ—
-	/// @param[in] window ƒTƒCƒY•ÏX‚Ì‘ÎÛ‚ÌƒEƒBƒ“ƒhƒE‚Ì¯•Êq
-	/// @param[in] width ƒTƒCƒY•ÏX‚Ì‘ÎÛ‚ÌƒEƒBƒ“ƒhƒE‚Ì•
-	/// @param[in] height ƒTƒCƒY•ÏX‚Ì‘ÎÛ‚ÌƒEƒBƒ“ƒhƒE‚Ì‚‚³
+	/// ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã‚µã‚¤ã‚ºå¤‰æ›´æ™‚ã®å‡¦ç†
+	/// @param[in] window ã‚µã‚¤ã‚ºå¤‰æ›´ã®å¯¾è±¡ã®ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã®è­˜åˆ¥å­
+	/// @param[in] width ã‚µã‚¤ã‚ºå¤‰æ›´ã®å¯¾è±¡ã®ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã®å¹…
+	/// @param[in] height ã‚µã‚¤ã‚ºå¤‰æ›´ã®å¯¾è±¡ã®ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã®é«˜ã•
 
-	// @note glfwSetWindowSizeCallback() ‚Å“o˜^‚·‚éƒR[ƒ‹ƒoƒbƒNŠÖ”
+	// @note glfwSetWindowSizeCallback() ã§ç™»éŒ²ã™ã‚‹ã‚³ãƒ¼ãƒ«ãƒãƒƒã‚¯é–¢æ•°
 	static auto resize(GLFWwindow* window, int width, int height) -> void {
-		// window ‚ª•Û‚·‚éƒCƒ“ƒXƒ^ƒ“ƒX‚Ì@this ƒ|ƒCƒ“ƒ^‚ğ“¾‚é
+		// window ãŒä¿æŒã™ã‚‹ã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹ã®ã€€this ãƒã‚¤ãƒ³ã‚¿ã‚’å¾—ã‚‹
 		const auto instance{ static_cast<Window*>(glfwGetWindowUserPointer(window)) };
 
-		// ƒCƒ“ƒXƒ^ƒ“ƒX‚©‚ç‚ÌŒÄ‚Ño‚µ‚Å‚È‚¯‚ê‚ÎI—¹
+		// ã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹ã‹ã‚‰ã®å‘¼ã³å‡ºã—ã§ãªã‘ã‚Œã°çµ‚äº†
 		if (instance == nullptr) return;
 
-		// ƒCƒ“ƒXƒ^ƒ“ƒX‚ÌƒEƒBƒ“ƒhƒEƒTƒCƒY‚ğXV
+		// ã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹ã®ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã‚µã‚¤ã‚ºã‚’æ›´æ–°
 		instance->size = { width, height };
 
-		// ƒtƒŒ[ƒ€ƒoƒbƒtƒ@‚Ì‘å‚«‚³
+		// ãƒ•ãƒ¬ãƒ¼ãƒ ãƒãƒƒãƒ•ã‚¡ã®å¤§ãã•
 		int fbWidth, fbHeight;
 
-		// ƒtƒŒ[ƒ€ƒoƒbƒtƒ@‚Ì‘å‚«‚³‚ğ“¾‚é
+		// ãƒ•ãƒ¬ãƒ¼ãƒ ãƒãƒƒãƒ•ã‚¡ã®å¤§ãã•ã‚’å¾—ã‚‹
 		glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
 
-		// ƒtƒŒ[ƒ€ƒoƒbƒtƒ@‘S‘Ì‚ğƒrƒ…[ƒ|[ƒg‚É‚·‚é
+		// ãƒ•ãƒ¬ãƒ¼ãƒ ãƒãƒƒãƒ•ã‚¡å…¨ä½“ã‚’ãƒ“ãƒ¥ãƒ¼ãƒãƒ¼ãƒˆã«ã™ã‚‹
 		glViewport(0, 0, fbWidth, fbHeight);
 	}
 
-	/// ƒ}ƒEƒXƒ{ƒ^ƒ“‚Ì‘€ì‚Ìˆ—
-	/// @param[in] window ƒ}ƒEƒXƒ{ƒ^ƒ“‚Ì‘€ì‚ğó‚¯•t‚¯‚éƒEƒBƒ“ƒhƒE¯•Êq
-	/// @param[in] button ‰Ÿ‚³‚ê‚½ƒ}ƒEƒXƒ{ƒ^ƒ“‚Ì¯•Êq
-	/// @param[in] action ƒ}ƒEƒXƒ{ƒ^ƒ“‚Ìó‘Ô
-	/// @param[in] mods ƒ}ƒEƒXƒ{ƒ^ƒ“‚Ìó‘Ô‚É‰e‹¿‚·‚éCüƒL[(Shift, Ctrl, Alt)
+	/// ãƒã‚¦ã‚¹ãƒœã‚¿ãƒ³ã®æ“ä½œæ™‚ã®å‡¦ç†
+	/// @param[in] window ãƒã‚¦ã‚¹ãƒœã‚¿ãƒ³ã®æ“ä½œã‚’å—ã‘ä»˜ã‘ã‚‹ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦è­˜åˆ¥å­
+	/// @param[in] button æŠ¼ã•ã‚ŒãŸãƒã‚¦ã‚¹ãƒœã‚¿ãƒ³ã®è­˜åˆ¥å­
+	/// @param[in] action ãƒã‚¦ã‚¹ãƒœã‚¿ãƒ³ã®çŠ¶æ…‹
+	/// @param[in] mods ãƒã‚¦ã‚¹ãƒœã‚¿ãƒ³ã®çŠ¶æ…‹ã«å½±éŸ¿ã™ã‚‹ä¿®é£¾ã‚­ãƒ¼(Shift, Ctrl, Alt)
 	/// 
-	/// @note glfwSetMouseButtonCallback() ‚Å“o˜^‚·‚éƒR[ƒ‹ƒoƒbƒNŠÖ”
+	/// @note glfwSetMouseButtonCallback() ã§ç™»éŒ²ã™ã‚‹ã‚³ãƒ¼ãƒ«ãƒãƒƒã‚¯é–¢æ•°
 	static void mouse(GLFWwindow* window, int button, int action, int mods) {
 #if defined(IMGUI_VERSION)
-		// ImGui ‚ªƒ}ƒEƒX‚ğg‚¤‚Æ‚«‚Í window ƒNƒ‰ƒX‚Ìƒ}ƒEƒXˆÊ’u‚ğXV
+		// ImGui ãŒãƒã‚¦ã‚¹ã‚’ä½¿ã†ã¨ãã¯ window ã‚¯ãƒ©ã‚¹ã®ãƒã‚¦ã‚¹ä½ç½®ã‚’æ›´æ–°
 		if (ImGui::GetIO().WantCaptureMouse) return;
 #endif
-		// window ‚ª•Û‚·‚éƒCƒ“ƒXƒ^ƒ“ƒX‚Ì this ƒ|ƒCƒ“ƒ^‚ğ“¾‚é
+		// window ãŒä¿æŒã™ã‚‹ã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹ã® this ãƒã‚¤ãƒ³ã‚¿ã‚’å¾—ã‚‹
 		const auto instance{ static_cast<Window*>(glfwGetWindowUserPointer(window)) };
 
-		// ƒCƒ“ƒXƒ^ƒ“ƒX‚©‚ç‚ÌŒÄ‚Ño‚µ‚Å‚È‚¢‚È‚ç–ß‚é
+		// ã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹ã‹ã‚‰ã®å‘¼ã³å‡ºã—ã§ãªã„ãªã‚‰æˆ»ã‚‹
 		if (instance == nullptr)return;
 
-		// ƒ}ƒEƒXƒ{ƒ^ƒ“‚ğ‰Ÿ‚µ‚Ä‚¢‚½‚ç
+		// ãƒã‚¦ã‚¹ãƒœã‚¿ãƒ³ã‚’æŠ¼ã—ã¦ã„ãŸã‚‰
 		if (action != GLFW_RELEASE) {
-			// ‰Ÿ‚µ‚½ƒ}ƒEƒXƒ{ƒ^ƒ“‚ğ‹L˜^
+			// æŠ¼ã—ãŸãƒã‚¦ã‚¹ãƒœã‚¿ãƒ³ã‚’è¨˜éŒ²
 			instance->button = button;
 
-			// ƒhƒ‰ƒbƒOŠJn‚ÌƒJ[ƒ\ƒ‹ˆÊ’u‚ğu•Û‘¶‚·‚é
+			// ãƒ‰ãƒ©ãƒƒã‚°é–‹å§‹æ™‚ã®ã‚«ãƒ¼ã‚½ãƒ«ä½ç½®ã‚’ã€Œä¿å­˜ã™ã‚‹
 			auto& cursor{ instance->start[button] };
 			glfwGetCursorPos(window, &cursor.x, &cursor.y);
 		}
 		else {
-			// ƒ}ƒEƒXƒ{ƒ^ƒ“‚ğ—£‚µ‚½‚±‚Æ‚ğ‹L˜^
+			// ãƒã‚¦ã‚¹ãƒœã‚¿ãƒ³ã‚’é›¢ã—ãŸã“ã¨ã‚’è¨˜éŒ²
 			instance->button = -1;
 
-			// ƒhƒ‰ƒbƒOI—¹‚Ì‰ñ“]‚ğ•Û‘¶
+			// ãƒ‰ãƒ©ãƒƒã‚°çµ‚äº†æ™‚ã®å›è»¢ã‚’ä¿å­˜
 			instance->rotation[button] = instance->trackball;
 		}
 	}
 
-	/// ƒ}ƒEƒXƒzƒC[ƒ‹‚ğ‘€ì‚µ‚½‚Ìˆ—
-	/// @param[in] window ƒ}ƒEƒXƒzƒC[ƒ‹‚Ì‘€ì‚ğó‚¯•t‚¯‚éƒEƒBƒ“ƒhƒE‚Ì¯•Êq
-	/// @param[in] x ƒ}ƒEƒXƒzƒC[ƒ‹‚Ì x •ûŒü‚Ì‰ñ“]—Ê
-	/// @param[in] y ƒ}ƒEƒXƒzƒC[ƒ‹‚Ì y •ûŒü‚Ì‰ñ“]—Ê
-	/// @note glfwSetScrollCallback() ‚Å“o˜^‚·‚éƒR[ƒ‹ƒoƒbƒNŠÖ”
+	/// ãƒã‚¦ã‚¹ãƒ›ã‚¤ãƒ¼ãƒ«ã‚’æ“ä½œã—ãŸæ™‚ã®å‡¦ç†
+	/// @param[in] window ãƒã‚¦ã‚¹ãƒ›ã‚¤ãƒ¼ãƒ«ã®æ“ä½œã‚’å—ã‘ä»˜ã‘ã‚‹ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã®è­˜åˆ¥å­
+	/// @param[in] x ãƒã‚¦ã‚¹ãƒ›ã‚¤ãƒ¼ãƒ«ã® x æ–¹å‘ã®å›è»¢é‡
+	/// @param[in] y ãƒã‚¦ã‚¹ãƒ›ã‚¤ãƒ¼ãƒ«ã® y æ–¹å‘ã®å›è»¢é‡
+	/// @note glfwSetScrollCallback() ã§ç™»éŒ²ã™ã‚‹ã‚³ãƒ¼ãƒ«ãƒãƒƒã‚¯é–¢æ•°
 	static void wheel(GLFWwindow* window, double x, double y) {
 #if defined(IMGUI_VERSION)
-		// ImGui ‚ªƒ}ƒEƒX‚ğg‚¤‚Æ‚«‚Í Window ƒNƒ‰ƒX‚ÌƒzƒC[ƒ‹‚Ì‰ñ“]—Ê‚ğXV‚µ‚È‚¢
+		// ImGui ãŒãƒã‚¦ã‚¹ã‚’ä½¿ã†ã¨ãã¯ Window ã‚¯ãƒ©ã‚¹ã®ãƒ›ã‚¤ãƒ¼ãƒ«ã®å›è»¢é‡ã‚’æ›´æ–°ã—ãªã„
 		if (ImGui::GetIO().WantCaptureMouse) return;
 #endif
 
-		// window ‚ª•Û‚·‚éƒCƒ“ƒXƒ^ƒ“ƒX‚Ì this ƒ|ƒCƒ“ƒ^‚ğ“¾‚é
+		// window ãŒä¿æŒã™ã‚‹ã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹ã® this ãƒã‚¤ãƒ³ã‚¿ã‚’å¾—ã‚‹
 		const auto instance{ static_cast<Window*>(glfwGetWindowUserPointer(window)) };
 
-		// ƒCƒ“ƒXƒ^ƒ“ƒX‚©‚ç‚ÌŒÄ‚Ño‚µ‚Å‚È‚¯‚ê‚Î–ß‚é
+		// ã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹ã‹ã‚‰ã®å‘¼ã³å‡ºã—ã§ãªã‘ã‚Œã°æˆ»ã‚‹
 		if (instance == nullptr) return;
 
-		// ƒ}ƒEƒXƒzƒC[ƒ‹‚Ì‰ñ“]—Ê‚Ì•Û‘¶
+		// ãƒã‚¦ã‚¹ãƒ›ã‚¤ãƒ¼ãƒ«ã®å›è»¢é‡ã®ä¿å­˜
 		instance->scroll += glm::dvec2{ x, y };
 	}
 
-	/// ƒL[ƒ{[ƒh‘€ì‚Ìˆ—
-	/// @note glfwSetKeyCallback() ‚Å“o˜^‚·‚éƒR[ƒ‹ƒoƒbƒNŠÖ”
+	/// ã‚­ãƒ¼ãƒœãƒ¼ãƒ‰æ“ä½œæ™‚ã®å‡¦ç†
+	/// @note glfwSetKeyCallback() ã§ç™»éŒ²ã™ã‚‹ã‚³ãƒ¼ãƒ«ãƒãƒƒã‚¯é–¢æ•°
 	static void key(GLFWwindow* window, int key, int scancode, int action, int mods) {
 #if defined(IMGUI_VERSION)
-		// ImGui ‚ªƒL[ƒ{[ƒh‚ğg‚¤‚Æ‚«‚Í Window ƒNƒ‰ƒX‚ÌƒL[“ü—Í‚ğ–³‹
+		// ImGui ãŒã‚­ãƒ¼ãƒœãƒ¼ãƒ‰ã‚’ä½¿ã†ã¨ãã¯ Window ã‚¯ãƒ©ã‚¹ã®ã‚­ãƒ¼å…¥åŠ›ã‚’ç„¡è¦–
 		if (ImGui::GetIO().WantCaptureKeyboard) return;
 #endif
 		const auto instance{ static_cast<Window*>(glfwGetWindowUserPointer(window)) };
 		if (instance == nullptr) return;
 
-		// ƒXƒy[ƒXƒL[‚ªu‰Ÿ‚³‚ê‚½uŠÔ (GLFW_PRESS)v‚Ì‚İ”½‰‚³‚¹‚é
+		// ã‚¹ãƒšãƒ¼ã‚¹ã‚­ãƒ¼ãŒã€ŒæŠ¼ã•ã‚ŒãŸç¬é–“ (GLFW_PRESS)ã€ã®ã¿åå¿œã•ã›ã‚‹
 		if (key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
-			instance->useDebugColor = !(instance->useDebugColor); // ƒtƒ‰ƒO‚ğ”½“]
+			instance->useDebugColor = !(instance->useDebugColor); // ãƒ•ãƒ©ã‚°ã‚’åè»¢
 		}
 	}
 
 public:
-	/// ƒRƒ“ƒXƒgƒ‰ƒNƒ^
-	/// @param[in] width ƒEƒBƒ“ƒhƒE‚Ì•
-	/// @param[in] height ƒEƒBƒ“ƒhƒE‚Ì‚‚³
-	/// @param[in] title ƒEƒBƒ“ƒhƒE‚Ìƒ^ƒCƒgƒ‹
+	/// ã‚³ãƒ³ã‚¹ãƒˆãƒ©ã‚¯ã‚¿
+	/// @param[in] width ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã®å¹…
+	/// @param[in] height ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã®é«˜ã•
+	/// @param[in] title ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã®ã‚¿ã‚¤ãƒˆãƒ«
 
 	Window(int width = 640, int height = 640, const char* title = "GLFW Window") :
-		// ƒƒ“ƒo•Ï”‚Ì‰Šú‰»
+		// ãƒ¡ãƒ³ãƒå¤‰æ•°ã®åˆæœŸåŒ–
 
-		// ƒEƒBƒ“ƒhƒE‚ğ¶¬‚µ¯•Êq‚ğ•Û‘¶
+		// ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã‚’ç”Ÿæˆã—è­˜åˆ¥å­ã‚’ä¿å­˜
 		window{ glfwCreateWindow(width,height,title, nullptr, nullptr) },
 
-		// ŠJ‚¢‚½ƒEƒBƒ“ƒhƒE‚ÌƒTƒCƒY‚ğ•Û‘¶‚·‚é
+		// é–‹ã„ãŸã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã®ã‚µã‚¤ã‚ºã‚’ä¿å­˜ã™ã‚‹
 		size{ width,height }
-		// ƒRƒ“ƒXƒgƒ‰ƒNƒ^“à–{‘Ì‚Ìˆ—
+		// ã‚³ãƒ³ã‚¹ãƒˆãƒ©ã‚¯ã‚¿å†…æœ¬ä½“ã®å‡¦ç†
 	{
-		// ŠJ‚¢‚½ƒEƒBƒ“ƒhƒE‚ª‚È‚¯‚ê‚Î–ß‚é
+		// é–‹ã„ãŸã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ãŒãªã‘ã‚Œã°æˆ»ã‚‹
 		if (window == nullptr)return;
 
-		// Œ»İ‚ÌƒEƒBƒ“ƒhƒE‚ğˆ—‘ÎÛ‚Æ‚·‚é
+		// ç¾åœ¨ã®ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã‚’å‡¦ç†å¯¾è±¡ã¨ã™ã‚‹
 		glfwMakeContextCurrent(window);
 
-		// •\¦‚ÍƒfƒBƒXƒvƒŒƒC‚ÌƒŠƒtƒŒƒbƒVƒ…ƒŒ[ƒg‚É“¯Šú‚³‚¹‚é
+		// è¡¨ç¤ºã¯ãƒ‡ã‚£ã‚¹ãƒ—ãƒ¬ã‚¤ã®ãƒªãƒ•ãƒ¬ãƒƒã‚·ãƒ¥ãƒ¬ãƒ¼ãƒˆã«åŒæœŸã•ã›ã‚‹
 		glfwSwapInterval(1);
 
-		// ‚±‚ÌƒCƒ“ƒXƒ^ƒ“ƒX‚Ì this ƒ|ƒCƒ“ƒ^‚ğ‹L˜^‚µ‚Ä‚¨‚­
+		// ã“ã®ã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹ã® this ãƒã‚¤ãƒ³ã‚¿ã‚’è¨˜éŒ²ã—ã¦ãŠã
 		glfwSetWindowUserPointer(window, this);
 
-		// ƒ}ƒEƒXƒzƒC[ƒ‹‚Ì‘€ì‚ÉŒÄ‚Ño‚·ˆ—‚ğ“o˜^‚·‚é
+		// ãƒã‚¦ã‚¹ãƒ›ã‚¤ãƒ¼ãƒ«ã®æ“ä½œæ™‚ã«å‘¼ã³å‡ºã™å‡¦ç†ã‚’ç™»éŒ²ã™ã‚‹
 		glfwSetScrollCallback(window, wheel);
 
-		// ƒ}ƒEƒXƒ{ƒ^ƒ“‚Ì‘€ì‚ÉŒÄ‚Ño‚·ˆ—‚ğ“o˜^‚·‚é
+		// ãƒã‚¦ã‚¹ãƒœã‚¿ãƒ³ã®æ“ä½œæ™‚ã«å‘¼ã³å‡ºã™å‡¦ç†ã‚’ç™»éŒ²ã™ã‚‹
 		glfwSetMouseButtonCallback(window, mouse);
 
-		// ƒL[ƒ{[ƒh‚Ì‘€ì‚ÉŒÄ‚Ño‚·ˆ—‚ğ“o˜^‚·‚é
+		// ã‚­ãƒ¼ãƒœãƒ¼ãƒ‰ã®æ“ä½œæ™‚ã«å‘¼ã³å‡ºã™å‡¦ç†ã‚’ç™»éŒ²ã™ã‚‹
 		glfwSetKeyCallback(window, key);
 
-		// Šeí‚Ìó‘Ô‚Ì•œ‹Aˆ—‚ğs‚¤
+		// å„ç¨®ã®çŠ¶æ…‹ã®å¾©å¸°å‡¦ç†ã‚’è¡Œã†
 		reset();
 
-		// ƒEƒBƒ“ƒhƒE‚ÌƒTƒCƒY•ÏX‚ÉŒÄ‚Ño‚·ˆ—‚ğ“o˜^‚·‚é
+		// ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã®ã‚µã‚¤ã‚ºå¤‰æ›´æ™‚ã«å‘¼ã³å‡ºã™å‡¦ç†ã‚’ç™»éŒ²ã™ã‚‹
 		glfwSetWindowSizeCallback(window, resize);
 
-		// ŠJ‚¢‚½ƒEƒBƒ“ƒhƒE‚É‰Šúİ’è‚ğ“K—p‚·‚é
+		// é–‹ã„ãŸã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã«åˆæœŸè¨­å®šã‚’é©ç”¨ã™ã‚‹
 		resize(window, width, height);
 	}
 
-	// ƒRƒs[ƒRƒ“ƒXƒgƒ‰ƒNƒ^‚Íg—p‚µ‚È‚¢
+	// ã‚³ãƒ”ãƒ¼ã‚³ãƒ³ã‚¹ãƒˆãƒ©ã‚¯ã‚¿ã¯ä½¿ç”¨ã—ãªã„
 	Window(const Window& draw) = delete;
 
-	/// ƒfƒRƒ“ƒXƒgƒ‰ƒNƒ^(ƒIƒuƒWƒFƒNƒg‚Ì”jŠü‚É©“®‚ÅŒÄ‚Ño‚³‚ê‚é)
+	/// ãƒ‡ã‚³ãƒ³ã‚¹ãƒˆãƒ©ã‚¯ã‚¿(ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã®ç ´æ£„æ™‚ã«è‡ªå‹•ã§å‘¼ã³å‡ºã•ã‚Œã‚‹)
 	virtual ~Window() {
-		// ƒEƒBƒ“ƒhƒE‚ğ”jŠü‚·‚é
+		// ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã‚’ç ´æ£„ã™ã‚‹
 		glfwDestroyWindow(window);
 	}
 
-	// ‘ã“ü‰‰Zq‚Íg—p‚µ‚È‚¢
+	// ä»£å…¥æ¼”ç®—å­ã¯ä½¿ç”¨ã—ãªã„
 	Window& operator=(const Window& draw) = delete;
 
-	// ƒ€[ƒu‘ã“ü‰‰Zq‚ÍƒfƒtƒHƒ‹ƒg‚Ì‚à‚Ì‚ğg—p‚·‚é
+	// ãƒ ãƒ¼ãƒ–ä»£å…¥æ¼”ç®—å­ã¯ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆã®ã‚‚ã®ã‚’ä½¿ç”¨ã™ã‚‹
 	Window& operator=(Window&& window) = default;
 
-	/// XVˆ—
+	/// æ›´æ–°å‡¦ç†
 	auto update() -> void {
-		// ƒ}ƒEƒX‚Ì‚¢‚¸‚ê‚Ìƒ{ƒ^ƒ“‚à‰Ÿ‚³‚ê‚Ä‚¢‚È‚¯‚ê‚Î‰½‚à‚µ‚È‚¢
+		// ãƒã‚¦ã‚¹ã®ã„ãšã‚Œã®ãƒœã‚¿ãƒ³ã‚‚æŠ¼ã•ã‚Œã¦ã„ãªã‘ã‚Œã°ä½•ã‚‚ã—ãªã„
 		if (button < GLFW_MOUSE_BUTTON_LEFT) return;
 
 #if defined(IMGUI_VERSION)
-		// ImGui ‚Ìó‘Ô‚ğæ‚èo‚·
+		// ImGui ã®çŠ¶æ…‹ã‚’å–ã‚Šå‡ºã™
 		const auto& io{ ImGui::GetIO() };
 
-		// ImGui ‚ªƒ}ƒEƒX‚ğg‚¤‚Æ‚«‚Í Window ƒNƒ‰ƒX‚Ìƒ}ƒEƒXˆÊ’u‚ğXV‚µ‚È‚¢
+		// ImGui ãŒãƒã‚¦ã‚¹ã‚’ä½¿ã†ã¨ãã¯ Window ã‚¯ãƒ©ã‚¹ã®ãƒã‚¦ã‚¹ä½ç½®ã‚’æ›´æ–°ã—ãªã„
 		if (io.WantCaptureMouse) return;
 
-		// ƒ}ƒEƒX‚ÌŒ»İˆÊ’u‚ğæ‚èo‚·
+		// ãƒã‚¦ã‚¹ã®ç¾åœ¨ä½ç½®ã‚’å–ã‚Šå‡ºã™
 		double x{ io.MousePos.x }, y{ io.MousePos.y };
 #else
-		// ƒ}ƒEƒX‚ÌŒ»İˆÊ’u‚ğæ‚èo‚·
+		// ãƒã‚¦ã‚¹ã®ç¾åœ¨ä½ç½®ã‚’å–ã‚Šå‡ºã™
 		double x, y;
 		glfwGetCursorPos(window, &x, &y);
 #endif
 
-		// ƒ}ƒEƒX‚Ì‘Š‘Î•ÏˆÊ
+		// ãƒã‚¦ã‚¹ã®ç›¸å¯¾å¤‰ä½
 		const auto dx{ (x - start[button].x) / size.x };
 		const auto dy{ (start[button].y - y) / size.y };
 
-		// ƒ}ƒEƒXƒCƒ|ƒCƒ“ƒg‚ÌˆÊ’u‚Ìƒhƒ‰ƒbƒOŠJnˆÊ’u‚Ì‹——£
+		// ãƒã‚¦ã‚¹ã‚¤ãƒã‚¤ãƒ³ãƒˆã®ä½ç½®ã®ãƒ‰ãƒ©ãƒƒã‚°é–‹å§‹ä½ç½®ã®è·é›¢
 		const auto length{ hypot(dx, dy) };
 
-		// ƒ}ƒEƒXƒCƒ|ƒCƒ“ƒg‚ÌˆÊ’u‚ªˆÚ“®‚µ‚Ä‚¢‚È‚¯‚ê‚Î
+		// ãƒã‚¦ã‚¹ã‚¤ãƒã‚¤ãƒ³ãƒˆã®ä½ç½®ãŒç§»å‹•ã—ã¦ã„ãªã‘ã‚Œã°
 		if (length == 0.0) return;
 
-		// ƒ}ƒEƒX‚ÌˆÚ“®•ûŒü‚Æ’¼s‚·‚éƒxƒNƒgƒ‹‚ğ‰ñ“]²
+		// ãƒã‚¦ã‚¹ã®ç§»å‹•æ–¹å‘ã¨ç›´è¡Œã™ã‚‹ãƒ™ã‚¯ãƒˆãƒ«ã‚’å›è»¢è»¸
 		const auto axis{ glm::normalize(glm::dvec3(-dy, dx, 0.0)) };
 
-		// ƒ}ƒEƒX‚ÌˆÚ“®—Ê‚ğ‰ñ“]Šp‚Æ‚µ‚½‰ñ“]‚ğŒ»İ‚Ì‰ñ“]‚Æ‡¬
+		// ãƒã‚¦ã‚¹ã®ç§»å‹•é‡ã‚’å›è»¢è§’ã¨ã—ãŸå›è»¢ã‚’ç¾åœ¨ã®å›è»¢ã¨åˆæˆ
 		trackball = glm::angleAxis(length * M_PI, axis) * rotation[button];
 
-		// ‡¬‚µ‚½‰ñ“]‚ÌlŒ³”‚©‚ç‰ñ“]‚Ì•ÏŠ·s—ñ‚ğ‹‚ß‚é
+		// åˆæˆã—ãŸå›è»¢ã®å››å…ƒæ•°ã‹ã‚‰å›è»¢ã®å¤‰æ›è¡Œåˆ—ã‚’æ±‚ã‚ã‚‹
 		model[button] = glm::mat4_cast(static_cast<glm::quat>(trackball));
 	}
 
-	/// •œ‹Aˆ—
+	/// å¾©å¸°å‡¦ç†
 	auto reset() -> void {
-		// ‚·‚×‚Ä‚Ìƒ{ƒ^ƒ“‚Ì‰ñ“]‚ğ‰Šú‰»‚·‚é
+		// ã™ã¹ã¦ã®ãƒœã‚¿ãƒ³ã®å›è»¢ã‚’åˆæœŸåŒ–ã™ã‚‹
 		std::fill(rotation.begin(), rotation.end(), glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
 
-		// ‚·‚×‚Äƒ{ƒ^ƒ“‚Ìƒ‚ƒfƒ‹•ÏŠ·s—ñ‚ğ‰Šú‰»‚·‚é
+		// ã™ã¹ã¦ãƒœã‚¿ãƒ³ã®ãƒ¢ãƒ‡ãƒ«å¤‰æ›è¡Œåˆ—ã‚’åˆæœŸåŒ–ã™ã‚‹
 		std::fill(model.begin(), model.end(), glm::mat4(1.0f));
 	}
 
-	/// ƒEƒBƒ“ƒhƒE‚Ì¯•Êq‚ğæ‚èo‚·
-	/// @return ƒEƒBƒ“ƒhƒE‚Ì¯•Êq
+	/// ãƒã‚¦ã‚¹ã®ç§»å‹•é‡ã‚’å–ã‚Šå‡ºã™
+	auto getMouseDelta() -> glm::dvec2 {
+		double x, y;
+#if defined(IMGUI_VERSION)
+		if (ImGui::GetIO().WantCaptureMouse) return { 0,0 };
+		x = ImGui::GetIO().MousePos.x;
+		y = ImGui::GetIO().MousePos.y;
+#else
+		glfwGetCursorPos(window, &x, &y);
+#endif
+		glm::dvec2 current{ x, y };
+		glm::dvec2 delta = current - lastPos;
+		lastPos = current;
+
+		// å·¦ã‚¯ãƒªãƒƒã‚¯ä¸­ã®ã¿å¤‰åŒ–é‡ã‚’è¿”ã™
+		if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
+			return delta;
+		}
+		return { 0, 0 };
+	}
+
+	/// ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã®è­˜åˆ¥å­ã‚’å–ã‚Šå‡ºã™
+	/// @return ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã®è­˜åˆ¥å­
 	auto get() const {
-		// ¯•Êq‚ğ•Ô‚·
+		// è­˜åˆ¥å­ã‚’è¿”ã™
 		return window;
 	}
 
-	/// ƒEƒBƒ“ƒhƒEƒTƒCƒY‚ğæ‚èo‚·
-	/// @return ƒEƒBƒ“ƒhƒE‚ÌƒTƒCƒY
+	/// ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã‚µã‚¤ã‚ºã‚’å–ã‚Šå‡ºã™
+	/// @return ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã®ã‚µã‚¤ã‚º
 	const auto& getSize() const {
-		// ƒEƒBƒ“ƒhƒE‚ÌƒTƒCƒY‚ğ•Ô‚·
+		// ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã®ã‚µã‚¤ã‚ºã‚’è¿”ã™
 		return size;
 	}
 
-	/// ƒfƒoƒbƒOƒJƒ‰[•\¦ƒtƒ‰ƒO‚ğæ‚èo‚·
+	/// ãƒ‡ãƒãƒƒã‚°ã‚«ãƒ©ãƒ¼è¡¨ç¤ºãƒ•ãƒ©ã‚°ã‚’å–ã‚Šå‡ºã™
 	bool getUseDebugColor() const {
 		return useDebugColor;
 	}
 
-	/// ImGui“™‚©‚ç‹­§“I‚Éƒtƒ‰ƒO‚ğ‘‚«Š·‚¦‚é—p
+	/// ã‚¹ã‚¯ãƒ­ãƒ¼ãƒ«é‡ï¼ˆYæ–¹å‘ï¼‰ã‚’å–ã‚Šå‡ºã™(ã®å¾Œã«ãƒªã‚»ãƒƒãƒˆ)
+	auto getScrollDelta() -> double {
+		double currentScroll = scroll.y;
+		scroll.y = 0.0; // 1ãƒ•ãƒ¬ãƒ¼ãƒ ã”ã¨ã«ãƒªã‚»ãƒƒãƒˆ
+		return currentScroll;
+	}
+
+	/// ImGuiç­‰ã‹ã‚‰å¼·åˆ¶çš„ã«ãƒ•ãƒ©ã‚°ã‚’æ›¸ãæ›ãˆã‚‹ç”¨
 	void setUseDebugColor(bool flag) {
 		useDebugColor = flag;
 	}
 
-	/// •`‰æ‚ÌŒp‘±”»’è
-	/// ‚±‚¢‚Â‚Ì‚¨‚©‚°‚Å while(window){} ‚ª‚Å‚«‚é
-	/// @return •`‰æ‚ğŒp‘±‚·‚éê‡ true
+	/// æç”»ã®ç¶™ç¶šåˆ¤å®š
+	/// ã“ã„ã¤ã®ãŠã‹ã’ã§ while(window){} ãŒã§ãã‚‹
+	/// @return æç”»ã‚’ç¶™ç¶šã™ã‚‹å ´åˆ true
 	explicit operator bool() {
-		// ƒCƒxƒ“ƒg‚ğæ‚èo‚·
+		// ã‚¤ãƒ™ãƒ³ãƒˆã‚’å–ã‚Šå‡ºã™
 		glfwPollEvents();
 
-		// ƒEƒBƒ“ƒhƒE‚ğ•Â‚¶‚é‚È‚ç false ‚ğ•Ô‚·
+		// ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã‚’é–‰ã˜ã‚‹ãªã‚‰ false ã‚’è¿”ã™
 		if (glfwWindowShouldClose(window))return false;
 
 #if defined(IMGUI_VERSION)
-		// ImGui ‚ÌV‹KƒtƒŒ[ƒ€‚ğì¬‚·‚é
+		// ImGui ã®æ–°è¦ãƒ•ãƒ¬ãƒ¼ãƒ ã‚’ä½œæˆã™ã‚‹
 		ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 #endif
 
-		// ƒEƒBƒ“ƒhƒE‚ğ•Â‚¶‚È‚¢
+		// ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã‚’é–‰ã˜ãªã„
 		return true;
 	}
 
-	/// ƒ_ƒuƒ‹ƒoƒbƒtƒ@ƒŠƒ“ƒO
+	/// ãƒ€ãƒ–ãƒ«ãƒãƒƒãƒ•ã‚¡ãƒªãƒ³ã‚°
 	auto swapBuffers() const {
 #if defined(IMGUI_VERSION)
 		ImGui::Render();
-		// ImGui ‚Ì•`‰æƒf[ƒ^‚ª‚ ‚ê‚ÎƒtƒŒ[ƒ€‚ğƒŒƒ“ƒ_ƒŠƒ“ƒO‚·‚é
+		// ImGui ã®æç”»ãƒ‡ãƒ¼ã‚¿ãŒã‚ã‚Œã°ãƒ•ãƒ¬ãƒ¼ãƒ ã‚’ãƒ¬ãƒ³ãƒ€ãƒªãƒ³ã‚°ã™ã‚‹
 		const auto data{ ImGui::GetDrawData() };
 		if (data) ImGui_ImplOpenGL3_RenderDrawData(data);
 #endif
-		// ƒJƒ‰[ƒoƒbƒtƒ@‚ğ“ü‚ê‘Ö‚¦‚é
+		// ã‚«ãƒ©ãƒ¼ãƒãƒƒãƒ•ã‚¡ã‚’å…¥ã‚Œæ›¿ãˆã‚‹
 		glfwSwapBuffers(window);
 	}
 
-	/// ƒEƒBƒ“ƒhƒE‚Ìc‰¡”ä‚ğæ‚èo‚·
-	/// @return ƒEƒBƒ“ƒhƒE‚Ìc‰¡”ä
+	/// ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã®ç¸¦æ¨ªæ¯”ã‚’å–ã‚Šå‡ºã™
+	/// @return ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã®ç¸¦æ¨ªæ¯”
 	auto getAspect() const {
-		// ƒEƒBƒ“ƒhƒE‚ÌƒTƒCƒY‚©‚çc‰¡”ä‚ğŒvZ‚µ‚Ä•Ô‚·
+		// ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã®ã‚µã‚¤ã‚ºã‹ã‚‰ç¸¦æ¨ªæ¯”ã‚’è¨ˆç®—ã—ã¦è¿”ã™
 		return static_cast<GLfloat>(size.x / size.y);
 	}
 
-	/// ƒ‚ƒfƒ‹•ÏŠ·s—ñ‚ğæ‚èo‚·
-	/// @param[in] button ƒ}ƒEƒXƒ{ƒ^ƒ“‚Ì¯•Êq
-	/// @return ƒ‚ƒfƒ‹•ÏŠ·s—ñ
+	/// ãƒ¢ãƒ‡ãƒ«å¤‰æ›è¡Œåˆ—ã‚’å–ã‚Šå‡ºã™
+	/// @param[in] button ãƒã‚¦ã‚¹ãƒœã‚¿ãƒ³ã®è­˜åˆ¥å­
+	/// @return ãƒ¢ãƒ‡ãƒ«å¤‰æ›è¡Œåˆ—
 	const auto& getModel(int button) {
-		// ƒ}ƒEƒXƒzƒC[ƒ‹‚Ì‰ñ“]—Ê‚ğƒ‚ƒfƒ‹•ÏŠ·s—ñ‚Ì•½sˆÚ“®—Ê‚Éİ’è
+		// ãƒã‚¦ã‚¹ãƒ›ã‚¤ãƒ¼ãƒ«ã®å›è»¢é‡ã‚’ãƒ¢ãƒ‡ãƒ«å¤‰æ›è¡Œåˆ—ã®å¹³è¡Œç§»å‹•é‡ã«è¨­å®š
 		model[button][3][0] = static_cast<float>(scroll.x * 0.1);
 		model[button][3][2] = static_cast<float>(scroll.y * 0.1);
 
-		// w’è‚µ‚½ƒ{ƒ^ƒ“‚ÉŠ„‚è“–‚Ä‚½ƒ‚ƒfƒ‹•ÏŠ·s—ñ‚ğ•Ô‚·
+		// æŒ‡å®šã—ãŸãƒœã‚¿ãƒ³ã«å‰²ã‚Šå½“ã¦ãŸãƒ¢ãƒ‡ãƒ«å¤‰æ›è¡Œåˆ—ã‚’è¿”ã™
 		return model[button];
 	}
 };

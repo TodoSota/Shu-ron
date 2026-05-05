@@ -87,6 +87,8 @@
     <None Include="src\mpm\shaders\mpm_move.comp">
       <Filter>コンピュートシェーダファイル</Filter>
     </None>
+    <None Include="src\render\mesh.vert" />
+    <None Include="src\render\mesh.frag" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\core\errorcheck.h">
@@ -102,6 +104,12 @@
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
     <ClInclude Include="src\mpm\mpmObject.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\Mesh.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\Camera.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
   </ItemGroup>
