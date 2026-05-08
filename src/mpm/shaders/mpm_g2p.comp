@@ -217,6 +217,7 @@ void main() {
 	float det_after = determinant(F_after);
 
 	p[idx].vc += -log(max(det_after, 1e-6)) + log(max(det_before, 1e-6)); // 行列がつぶれ 0 の場合をなくす
+	p[idx].position.xyz += new_v * timestep; // 補正後の位置を追加
 	p[idx].deformation = mat4(F_after);
 	p[idx].velocity = vec4(new_v, 0);
 	p[idx].affineC = mat4(new_C);
