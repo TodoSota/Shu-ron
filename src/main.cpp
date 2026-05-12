@@ -370,20 +370,18 @@ auto main() -> int {
 				glm::vec4 ray_clip = glm::vec4(x, y, -1.0f, 1.0f);		// 3D でのクリック位置座標に変換(OpenGLではウィンドウはサイズに関わらず正方形)
 
 				// 3D シミュレート空間上での座標に変換・方向ベクトルを生成
-				glm::vec4 ray_eye = glm::inverse(projection) * ray_clip;// projectionの逆変換でカメラ空間へ戻す
+				glm::vec4 ray_eye = invProj * ray_clip;// projectionの逆変換でカメラ空間へ戻す
 				ray_eye /= ray_eye.w;									// 変換により w が 1 でなくなるので補正(透視除算 : Perspective Division というらしい)
-				glm::vec4 ray_world = glm::inverse(view) * ray_eye;		// view の逆変換で 3D 空間の座標に戻す
+				glm::vec4 ray_world = invView * ray_eye;		// view の逆変換で 3D 空間の座標に戻す
 				glm::vec3 ray_origin = glm::vec3(ray_world);			// 飛んでいく目的地
 				glm::vec3 ray_dir = glm::normalize(ray_origin - camera.position);// 方向ベクトルの生成( 目的地 - 出発位置 )
 
 				// 3D空間上でのカメラ位置から光線方向へ発射
-				mpmphysics.obstacle_sphere = glm::vec4(ray_origin, mpmphysics.obstacle_sphere.w);
-				mpmphysics.obstacle_velocity = glm::vec4(ray_dir * 6.0f, 0.0f);	// 方向 * 速度
+				obstacle.position = camera.position + ray_dir * 0.5f;
+				obstacle.velocity = ray_dir * 6.0f;
+				obstacle.scale = glm::vec3(-0.2f);
 			}
 		}
-
-		// 速度を位置に足して球を物理的に移動させる
-		mpmphysics.obstacle_sphere += mpmphysics.obstacle_velocity * mpmphysics.timestep;
 
 		glBindBuffer(GL_UNIFORM_BUFFER, ubo);
 		glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(MPMPhysics), &mpmphysics);

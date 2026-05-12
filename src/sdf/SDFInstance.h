@@ -31,6 +31,7 @@ public:
     /// param[in] dt タイムステップ
     void update(float dt) {
         position += velocity * dt;
+        updateMatrices();
     }
 
     // モデル行列と逆行列の再計算
