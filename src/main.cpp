@@ -7,11 +7,18 @@
 #include "core/shader.h"		// シェーダー読み込み処理
 #include "core/Object.h"		// 描画のためのデータパッケージ
 #include "core/Mesh.h"			// UV球のメッシュデータパッケージ
+#include "core/MeshResource.h"	// UV球のメッシュデータパッケージ
+#include "sdf/SDFInstance.h"
 #include "mpm/mpmObject.h"	// MPM 用の描画データパッケージ
+
+// オブジェクトロード・ライブラリ
+#define TINYOBJLOADER_IMPLEMENTATION // 必ずインクルードの前に書く
+#include "tiny_obj_loader/tiny_obj_loader.h"
 
 // 標準ライブラリ
 #include <iostream>
 #include <random>
+#include <memory>
 
 // GLM関連
 #include <GLM/gtc/type_ptr.hpp>
@@ -237,6 +244,18 @@ auto main() -> int {
 	mpmObject mpmObj(PARTICLE_COUNT, N_GRID);
 	generateMPMParticles(mpmObj, 1.0f, false);	// false なので立方体
 
+	// シミュレーション空間内に存在するオブジェクトリソースのロード
+	auto sdfResource = std::make_shared<MeshResource>("src/assets/object.obj");
+
+
+	sdfResource->generateSDF(64);// 64^3の解像度でSDFを生成
+
+	// インスタンスを作成
+	SDFInstance obstacle(sdfResource);
+	obstacle.position = glm::vec3(0.5f, 0.3f, 0.5f);
+	obstacle.scale = glm::vec3(-0.2f);
+	obstacle.updateMatrices();
+
 	// 地面用のオブジェクトを用意
 	const auto GRID_SIZE = 20;
 	Object floorObject(GRID_SIZE * GRID_SIZE);
@@ -349,22 +368,20 @@ auto main() -> int {
 				float x = (2.0f * xpos) / window.getSize().x - 1.0f;	// -1～1 へ正規化
 				float y = 1.0f - (2.0f * ypos) / window.getSize().y;	// -1～1 へ正規化・y座標の扱いのため反転
 				glm::vec4 ray_clip = glm::vec4(x, y, -1.0f, 1.0f);		// 3D でのクリック位置座標に変換(OpenGLではウィンドウはサイズに関わらず正方形)
-				
+
 				// 3D シミュレート空間上での座標に変換・方向ベクトルを生成
-				glm::vec4 ray_eye = glm::inverse(projection) * ray_clip;// projectionの逆変換でカメラ空間へ戻す
+				glm::vec4 ray_eye = invProj * ray_clip;// projectionの逆変換でカメラ空間へ戻す
 				ray_eye /= ray_eye.w;									// 変換により w が 1 でなくなるので補正(透視除算 : Perspective Division というらしい)
-				glm::vec4 ray_world = glm::inverse(view) * ray_eye;		// view の逆変換で 3D 空間の座標に戻す
+				glm::vec4 ray_world = invView * ray_eye;		// view の逆変換で 3D 空間の座標に戻す
 				glm::vec3 ray_origin = glm::vec3(ray_world);			// 飛んでいく目的地
 				glm::vec3 ray_dir = glm::normalize(ray_origin - camera.position);// 方向ベクトルの生成( 目的地 - 出発位置 )
 
 				// 3D空間上でのカメラ位置から光線方向へ発射
-				mpmphysics.obstacle_sphere = glm::vec4(ray_origin, mpmphysics.obstacle_sphere.w);
-				mpmphysics.obstacle_velocity = glm::vec4(ray_dir * 6.0f, 0.0f);	// 方向 * 速度
+				obstacle.position = camera.position + ray_dir * 0.5f;
+				obstacle.velocity = ray_dir * 6.0f;
+				obstacle.scale = glm::vec3(-0.2f);
 			}
 		}
-
-		// 速度を位置に足して球を物理的に移動させる
-		mpmphysics.obstacle_sphere += mpmphysics.obstacle_velocity * mpmphysics.timestep;
 
 		glBindBuffer(GL_UNIFORM_BUFFER, ubo);
 		glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(MPMPhysics), &mpmphysics);
@@ -372,8 +389,27 @@ auto main() -> int {
 
 		lastMouseState = currentState; // マウス状態の更新
 
+		// SDF の更新
+		obstacle.update(mpmphysics.timestep);	// 物理挙動を更新
+
+		// 以降で3枚のテクスチャを使うので 4 番でテクスチャをバインド
+		glActiveTexture(GL_TEXTURE4);
+		glBindTexture(GL_TEXTURE_3D, sdfResource->sdfTexture3D);
+
+		// ユニフォーム変数に値を送信 | モデル逆行列 & 速度
+		const glm::mat4& modelMat = obstacle.getModelMatrix();
+		const glm::mat4& modelInv = obstacle.getInverseModelMatrix();
+		glUseProgram(mpmGrid);
+		glUniformMatrix4fv(glGetUniformLocation(mpmGrid, "sdf_model"), 1, GL_FALSE, glm::value_ptr(modelMat));
+		glUniformMatrix4fv(glGetUniformLocation(mpmGrid, "sdf_inv_model"), 1, GL_FALSE, glm::value_ptr(modelInv));
+		// 2. 速度
+		glUniform3fv(glGetUniformLocation(mpmGrid, "sdf_velocity"), 1, glm::value_ptr(obstacle.velocity));
+		// 3. テクスチャ空間の範囲（UVWマッピング用）
+		glUniform3fv(glGetUniformLocation(mpmGrid, "sdf_aabb_min"), 1, glm::value_ptr(sdfResource->aabbMin));
+		glUniform3fv(glGetUniformLocation(mpmGrid, "sdf_aabb_max"), 1, glm::value_ptr(sdfResource->aabbMax));
+
 		// シェーダーストレージバッファオブジェクトを 0 番の結合ポイントに結合する
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mpmObj.vbo); // <MPM用>
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mpmObj.vbo);
 
 		// ユニフォームバッファオブジェクトを 1 番に結合
 		glBindBufferBase(GL_UNIFORM_BUFFER, 1, ubo);
@@ -437,12 +473,22 @@ auto main() -> int {
 
 		// 障害物の描画
 		glUseProgram(meshProgram);
+
+		glm::mat4 finalModel = model * modelMat;
+		glm::mat4 mvp = projection * view * finalModel;		// MVP行列を計算してシェーダーに送信
+		glUniformMatrix4fv(glGetUniformLocation(meshProgram, "mc"), 1, GL_FALSE, glm::value_ptr(mvp));
+		glUniformMatrix4fv(glGetUniformLocation(meshProgram, "model"), 1, GL_FALSE, glm::value_ptr(finalModel));
+
+		glBindVertexArray(obstacle.resource->vao);
+		glDrawElements(GL_TRIANGLES, obstacle.resource->indexCount, GL_UNSIGNED_INT, 0);
+
+		/*
 		glm::vec3 spherePos = glm::vec3(mpmphysics.obstacle_sphere);// 球の位置とサイズをシミュレーションデータから取得
 		float sphereRadius = mpmphysics.obstacle_sphere.w;
-		glm::mat4 objModel = 
-			glm::translate(glm::mat4(1.0f), spherePos)* glm::scale(glm::mat4(1.0f), glm::vec3(sphereRadius));// モデル行列の作成（平行移動 × 拡大縮小）
+		glm::mat4 objModel =
+			glm::translate(glm::mat4(1.0f), spherePos) * glm::scale(glm::mat4(1.0f), glm::vec3(sphereRadius));// モデル行列の作成（平行移動 × 拡大縮小）
 		glm::mat4 sphereModel = model * objModel;	// マウスの回転も含めた model を作成
-		glm::mat4 mvp = projection * view *sphereModel;		// MVP行列を計算してシェーダーに送信
+		glm::mat4 mvp = projection * view * sphereModel;		// MVP行列を計算してシェーダーに送信
 		glUniformMatrix4fv(glGetUniformLocation(meshProgram, "mc"), 1, GL_FALSE, glm::value_ptr(mvp));
 		glUniformMatrix4fv(glGetUniformLocation(meshProgram, "model"), 1, GL_FALSE, glm::value_ptr(sphereModel));
 
@@ -450,6 +496,7 @@ auto main() -> int {
 		glBindVertexArray(obstacleMesh.vao);
 		glDrawElements(GL_TRIANGLES, obstacleMesh.indexCount, GL_UNSIGNED_INT, 0);
 		glBindVertexArray(0);
+		*/
 
 		glBindVertexArray(0);	// 念のため
 

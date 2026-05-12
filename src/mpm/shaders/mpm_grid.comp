@@ -8,6 +8,8 @@ layout(r32ui, binding = 0) uniform uimage3D gridIMX;
 layout(r32ui, binding = 1) uniform uimage3D gridIMY;
 layout(r32ui, binding = 2) uniform uimage3D gridIMZ;
 layout(r32ui, binding = 3) uniform uimage3D gridIMA;
+// SDF テクスチャ 1枚
+layout(binding = 4) uniform sampler3D sdf_tex;
 
 // MPMの粒子群の物理パラメータ
 layout(std140, binding = 1) uniform MPMPhysics {
@@ -41,6 +43,13 @@ layout(std140, binding = 1) uniform MPMPhysics {
 // ビット変換用のヘルパー関数
 float uintToFloat(uint val) { return uintBitsToFloat(val); }
 uint floatToUint(float val) { return floatBitsToUint(val); }
+
+// SDF のユニフォーム変数
+uniform mat4 sdf_model;
+uniform mat4 sdf_inv_model;
+uniform vec3 sdf_velocity;
+uniform vec3 sdf_aabb_min;
+uniform vec3 sdf_aabb_max;
 
 void main() {
 	ivec3 coords = ivec3(gl_GlobalInvocationID.xyz);
@@ -97,43 +106,75 @@ void main() {
 	//
 
 	// SDF を追加するための判定ロジック部分
-	vec3 sphere_center = obstacle_sphere.xyz;
-	float sphere_radius = obstacle_sphere.w;
+	// 1. 現在のグリッドノードのワールド座標を計算 
+	// ※ 追加分
 
-	// 中心から現在位置へのベクトル
-	vec3 to_pos = pos - sphere_center;
-	
-	// SDFの距離計算：中心からの距離 - 半径
-	float sdf_dist = length(to_pos) - sphere_radius;
+	// 2. ワールド座標 -> SDFローカル座標への逆変換
+	vec4 pos_local_vec4 = sdf_inv_model * vec4(pos, 1.0);
+	vec3 pos_local = pos_local_vec4.xyz;
 
-	// 距離が0未満（球の内部にめり込んでいる）なら衝突処理
-	if (sdf_dist < 0.0) {
-		// 球の表面法線（中心から外側へ向かう正規化ベクトル）
-		vec3 normal = normalize(to_pos);
-		vec3 obs_vel = obstacle_velocity.xyz;
+	// 3. ローカル座標がAABBの中に入っているかチェック（最適化：外なら計算しない）
+	if (all(greaterThanEqual(pos_local, sdf_aabb_min)) && all(lessThanEqual(pos_local, sdf_aabb_max))) {
+    
+		// 4. ローカル座標 -> テクスチャUVW座標 (0.0 ~ 1.0) へのマッピング
+		vec3 uvw = (pos_local - sdf_aabb_min) / (sdf_aabb_max - sdf_aabb_min);
+    
+		// 5. 距離のサンプリング
+		float dist_local = texture(sdf_tex, uvw).r;
+		// 等方前提なので注意！！！！
+		float dist_world = dist_local * length(vec3(sdf_model[0]));// X軸スケールからスケールをかけてワールドでの距離に
+    
+		// 6. 衝突判定 (距離が0以下ならめり込んでいる)
+		if (dist_world < p_radius) {
+        
+			// --- 法線(Normal)の計算 (中央差分) ---
+			// テクスチャの1ピクセル分くらいずらしてサンプリングし、勾配を求める
+			vec3 texSize = vec3(textureSize(sdf_tex, 0));	// テクスチャ解像度
+			vec3 texel = 1.0 / texSize;						
+			vec3 epsX = vec3(texel.x, 0.0, 0.0);
+			vec3 epsY = vec3(0.0, texel.y, 0.0);
+			vec3 epsZ = vec3(0.0, 0.0, texel.z);
+        
+			float nx = (texture(sdf_tex, uvw + epsX).r - texture(sdf_tex, uvw - epsX).r) / (2.0 * texel.x);
+			float ny = (texture(sdf_tex, uvw + epsY).r - texture(sdf_tex, uvw - epsY).r) / (2.0 * texel.y);
+			float nz = (texture(sdf_tex, uvw + epsZ).r - texture(sdf_tex, uvw - epsZ).r) / (2.0 * texel.z);
+        
+			// ローカル空間での法線
+			vec3 normal_local = normalize(vec3(nx, ny, nz));
+        
+			// 7. ローカル法線 -> ワールド法線への変換 (正行列の3x3部分を掛ける)
+			// "法線行列はモデル行列の逆行列の転置" になる(らしい)
+			vec3 normal_world = normalize(mat3(transpose(sdf_inv_model)) * normal_local);
+        
+			// 8. 衝突解決 (相対速度の押し出し)
+			// grid_vel は現在のグリッドの速度(vec3)とします
+			vec3 rel_vel = v - sdf_velocity;
+			float vn = dot(rel_vel, normal_world);
 
-		vec3 v_rel = v - obs_vel;
-		float v_normal = dot(v_rel, normal);
-		float push_out_v = (-sdf_dist / timestep) * 0.3;	// 押し出す力(物体に触れているときちょっと斥力を与える)
+			// 接触 + めり込み条件
+			if (dist_world < p_radius && vn < 0.0) {
 
-		// 球の中心に向かって進んでいる（めり込もうとしている）場合のみ
-		if (v_normal < 0.0) {
-			vec3 vn = normal * v_normal; // 法線方向の速度
-			vec3 vt = v_rel - vn;        // 接線方向の速度
+				vec3 vt = rel_vel - vn * normal_world;
+				float vt_len = length(vt);
 
-			// 摩擦の適用
-			float vt_len = length(vt);
-			if(vt_len > 1e-7){
-				float normal_force = abs(v_normal - push_out_v);	// 押し出しに必要な力
-				float friction_factor = max(0.0, 1.0 - f_friction * normal_force / vt_len);
-				vt *= friction_factor;
+				float mu = f_friction;
+
+				// 法線方向は止める
+				vec3 new_rel_vel = vt;
+
+				// 摩擦
+				if (vt_len > 1e-6) {
+					float max_friction = -mu * vn;
+
+					if (vt_len < max_friction) {
+						new_rel_vel = vec3(0.0);
+					} else {
+						new_rel_vel = vt * (1.0 - max_friction / vt_len);
+					}
+				}
+
+				v = sdf_velocity + new_rel_vel;
 			}
-			// 反発と押し出しの強い方を採用する
-			float final_vn = max(push_out_v, -v_normal * f_restitution);
-
-			// 速度の更新（接線方向の速度 + 反発係数によって減衰させた法線方向の押し返し）
-			v_rel = vt + normal * final_vn;
-			v = v_rel + obs_vel;
 		}
 	}
 
