@@ -25,7 +25,7 @@
 #include <GLM/gtc/matrix_transform.hpp>
 
 // 粒子数
-const auto PARTICLE_COUNT{ 10000 }; // ノートPCでやるには10000重いので
+const auto PARTICLE_COUNT{ 30000 }; // ノートPCでやるには10000重いので
 const float worldScale = 0.67f;
 
 /// 点群データ作成
