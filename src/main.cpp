@@ -25,7 +25,7 @@
 #include <GLM/gtc/matrix_transform.hpp>
 
 // 粒子数
-const auto PARTICLE_COUNT{ 30000 }; // ノートPCでやるには10000重いので
+const auto PARTICLE_COUNT{ 10000 }; // ノートPCでやるには10000重いので
 const float worldScale = 0.67f;
 
 /// 点群データ作成
@@ -274,7 +274,8 @@ auto main() -> int {
 	glBufferSubData(GL_ARRAY_BUFFER, 0, floorParticles.size() * sizeof(Particle), floorParticles.data());
 
 	// 各種材料の特性値とシミュレーションの設定
-	const float E_s = 3.537e5f;	// ヤング率
+	//const float E_s = 3.537e5f;	// ヤング率
+	const float E_s = 5e4f;	// ヤング率
 	const float nu_s = 0.3f;	// ポアソン比
 	const float g_interval = worldScale / (float)N_GRID;	// グリッドの間隔
 
@@ -328,6 +329,31 @@ auto main() -> int {
 	int isFireMode = 0;                // 0: カメラ操作モード, 1: 球の発射モード
 	int lastMouseState = GLFW_RELEASE; // クリックされた瞬間を判定するため
 
+	// スイングモード用の状態管理
+	enum class SwingState { None, Dragging, Swinging };	// 遷移状態
+	SwingState swingState = SwingState::None;			// 初期化
+
+	glm::dvec2 dragStartPos{ 0.0, 0.0 };
+	glm::vec3 swingPivot{ 0.0f };       // 支点(画面手前Z平面の懸念を考慮しオフセットした座標)
+	glm::vec3 swingAxis{ 1, 0, 0 };     // 回転軸(カメラの左右方向)
+
+	float swingMaxAngle = 0.0f;         // 溜めた角度(振幅)
+	float swingCurrentTime = 0.0f;      // スイングの進行時間
+	float swingRadius = 0.4f;           // 軌道半径
+	float swingSpeedMult = 6.0f;        // スイングの角速度倍率
+
+	// --- プレビュー描画用のVAO/VBOの用意 ---
+	GLuint debugVAO, debugVBO;
+	glGenVertexArrays(1, &debugVAO);
+	glGenBuffers(1, &debugVBO);
+	glBindVertexArray(debugVAO);
+	glBindBuffer(GL_ARRAY_BUFFER, debugVBO);
+	// 最大100頂点分のvec3データを格納できるサイズを確保 (動的に書き換えるため GL_DYNAMIC_DRAW)
+	glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * 100, nullptr, GL_DYNAMIC_DRAW);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
+	glBindVertexArray(0);
+
 	// 描画空間におけるカメラ生成
 	Camera camera;
 
@@ -338,7 +364,10 @@ auto main() -> int {
 
 		// マウスでの視点移動を獲得
 		glm::dvec2 delta = window.getMouseDelta();
-		camera.rotate((float)delta.x, (float)delta.y);
+		// 右クリックドラッグ時のみカメラ視点移動
+		if (glfwGetMouseButton(window.get(), GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
+			camera.rotate((float)delta.x, (float)delta.y);
+		}
 
 		// スクロール量を取り出してズームに変換
 		double scrollDelta = window.getScrollDelta();
@@ -383,6 +412,112 @@ auto main() -> int {
 			}
 		}
 
+		// スイングモード (ドラッグで溜めて離して発動)
+		if (isFireMode == 2 && !ImGui::GetIO().WantCaptureMouse) {
+			// スイングモード発動時の初期化部分
+			obstacle.scale = glm::vec3(-0.06f, -0.4f, -0.06f); // Y軸方向に長くして「棍棒」状にする
+			if (currentState == GLFW_PRESS && lastMouseState == GLFW_RELEASE) {
+				// ドラッグ開始
+				swingState = SwingState::Dragging;
+				glfwGetCursorPos(window.get(), &dragStartPos.x, &dragStartPos.y);
+
+				// Z深度対策: カメラから一定距離(swingRadius等)奥を支点にする
+				float x = (2.0f * dragStartPos.x) / window.getSize().x - 1.0f;
+				float y = 1.0f - (2.0f * dragStartPos.y) / window.getSize().y;
+				glm::vec4 ray_clip = glm::vec4(x, y, -1.0f, 1.0f);
+				glm::vec4 ray_eye = invProj * ray_clip;
+				ray_eye /= ray_eye.w;
+				glm::vec4 ray_world = invView * ray_eye;
+				glm::vec3 ray_dir = glm::normalize(glm::vec3(ray_world) - camera.position);
+
+				float distanceD = 1.0f; // カメラからどれくらい奥をスイング平面にするか
+
+				// Viewの逆行列の3列目（インデックス2）がカメラの後ろ方向(+Z)なので、反転させて前方向(-Z)を取得
+				glm::vec3 cam_front = -glm::normalize(glm::vec3(invView[2]));
+
+				// レイと平面の交差距離 t を計算
+				float t = distanceD / glm::dot(cam_front, ray_dir);
+
+				// 支点座標をセット
+				swingPivot = camera.position + ray_dir * t;
+
+				// 画面水平方向(カメラのRightベクトル)を回転軸に設定
+				swingAxis = glm::normalize(glm::vec3(invView[0]));
+			}
+			else if (currentState == GLFW_RELEASE && swingState == SwingState::Dragging) {
+				// ドラッグ終了 -> スイング発動
+				swingState = SwingState::Swinging;
+				swingCurrentTime = 0.0f;
+
+				// 初期位置へセット
+				obstacle.scale = glm::vec3(-0.06f, -0.4f, -0.06f); // SDF用の反転スケール
+			}
+
+			if (swingState == SwingState::Dragging) {
+				double currentX, currentY;
+				glfwGetCursorPos(window.get(), &currentX, &currentY);
+
+				float dx = static_cast<float>(currentX - dragStartPos.x);
+				float dy = static_cast<float>(currentY - dragStartPos.y);
+
+				// カメラの右方向と「後ろ」方向（手前に引くため）を取得
+				glm::vec3 cam_right = glm::normalize(glm::vec3(invView[0]));
+				glm::vec3 cam_back = glm::normalize(glm::vec3(invView[2]));
+
+				// ドラッグ量を3Dワールドベクトルに変換
+				glm::vec3 drag3D = dx * cam_right + dy * cam_back;
+				float dragLen = glm::length(drag3D);
+
+				float maxPixelDrag = 300.0f; // 最大威力に必要なドラッグ量
+				float normalizedDrag = glm::clamp(dragLen / maxPixelDrag, 0.0f, 1.0f);
+				swingMaxAngle = normalizedDrag * glm::radians(90.0f);
+
+				// ドラッグ距離がわずかでもあれば回転軸を更新
+				if (dragLen > 1.0f) {
+					// 振り子の真下ベクトルと引っ張った方向の外積が回転軸になる
+					glm::vec3 downVector = glm::vec3(0.0f, -1.0f, 0.0f);
+					swingAxis = glm::normalize(glm::cross(drag3D, downVector));
+				}
+			}
+		}
+
+		// スイング中のキネマティック軌道計算
+		if (swingState == SwingState::Swinging) {
+			swingCurrentTime += mpmphysics.timestep * swingSpeedMult;
+
+			// cos波を利用して -swingMaxAngle から 逆側の +swingMaxAngle へ振り抜く
+			float phase = swingCurrentTime;
+
+			// π(半周期)を超えたらスイング終了
+			if (phase > glm::pi<float>()) {
+				swingState = SwingState::None;
+				obstacle.velocity = glm::vec3(0.0f);
+				obstacle.angularVelocity = glm::vec3(0.0f);
+			}
+			else {
+				// 現在の角度と角速度(微積分関係)
+				float currentAngle = -swingMaxAngle * cos(phase);
+				float angularSpeed = swingMaxAngle * sin(phase) * swingSpeedMult;
+
+				// 角速度ベクトル
+				glm::vec3 currentAngularVelocity = swingAxis * angularSpeed;
+
+				// 位置の算出 (支点から真下ベクトルの回転)
+				glm::vec3 downVector = glm::vec3(0.0f, -1.0f, 0.0f);
+				glm::mat4 rotMat = glm::rotate(glm::mat4(1.0f), currentAngle, swingAxis);
+				glm::vec3 offset = glm::vec3(rotMat * glm::vec4(downVector * swingRadius, 0.0f));
+
+				// インスタンスの強制更新
+				obstacle.position = swingPivot + offset;
+				// 剛体の速度法則 v = ω × r (並進速度の正確な生成)
+				obstacle.velocity = glm::cross(currentAngularVelocity, offset);
+				obstacle.angularVelocity = currentAngularVelocity;
+
+				// オブジェクトの見た目も軌道に沿って回転させる
+				obstacle.rotation = glm::quat_cast(rotMat);
+			}
+		}
+
 		glBindBuffer(GL_UNIFORM_BUFFER, ubo);
 		glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(MPMPhysics), &mpmphysics);
 		glBindBuffer(GL_UNIFORM_BUFFER, 0);
@@ -407,6 +542,9 @@ auto main() -> int {
 		// 3. テクスチャ空間の範囲（UVWマッピング用）
 		glUniform3fv(glGetUniformLocation(mpmGrid, "sdf_aabb_min"), 1, glm::value_ptr(sdfResource->aabbMin));
 		glUniform3fv(glGetUniformLocation(mpmGrid, "sdf_aabb_max"), 1, glm::value_ptr(sdfResource->aabbMax));
+		// 4. 重心座標と角速度を送信
+		glUniform3fv(glGetUniformLocation(mpmGrid, "sdf_angular_velocity"), 1, glm::value_ptr(obstacle.angularVelocity));
+		glUniform3fv(glGetUniformLocation(mpmGrid, "sdf_center"), 1, glm::value_ptr(obstacle.position));
 
 		// シェーダーストレージバッファオブジェクトを 0 番の結合ポイントに結合する
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mpmObj.vbo);
@@ -500,6 +638,62 @@ auto main() -> int {
 
 		glBindVertexArray(0);	// 念のため
 
+		// Swing モードのプレビュー
+		if (swingState == SwingState::Dragging) {
+			std::vector<glm::vec3> previewPoints;
+			glm::vec3 downVector = glm::vec3(0.0f, -1.0f, 0.0f);
+			int segments = 30; // 円弧の分割数
+
+			float tipOffset = abs(obstacle.scale.y) * 0.5f;
+			float tipRadius = swingRadius + tipOffset;
+
+			// 1. スイング軌道（円弧）の計算
+			for (int i = 0; i <= segments; i++) {
+				float t = (float)i / segments;
+				float angle = -swingMaxAngle + (swingMaxAngle * 2.0f) * t;
+				glm::mat4 rotMat = glm::rotate(glm::mat4(1.0f), angle, swingAxis);
+
+				// ▼ 変更: swingRadius ではなく tipRadius を使って先端の軌道を描画
+				glm::vec3 offset = glm::vec3(rotMat * glm::vec4(downVector * tipRadius, 0.0f));
+				previewPoints.push_back(swingPivot + offset);
+			}
+
+			// 2. 最下点（最大速度が発生する場所）の予想速度ベクトルの計算
+			glm::vec3 bottomPos = swingPivot + downVector * tipRadius; // ▼ ここも tipRadius に
+
+			// 速度公式: ω(最大角速度) × r (※ここでの r は先端までの距離)
+			glm::vec3 maxAngularVelocity = swingAxis * (swingMaxAngle * swingSpeedMult);
+			glm::vec3 maxVelocity = glm::cross(maxAngularVelocity, downVector * tipRadius); // ▼ ここも
+
+			previewPoints.push_back(bottomPos);
+			previewPoints.push_back(bottomPos + maxVelocity * 0.1f);
+
+			// 3. 支点（Pivot）の十字マーカー計算
+			float d = 0.05f;
+			previewPoints.push_back(swingPivot + glm::vec3(-d, 0, 0));
+			previewPoints.push_back(swingPivot + glm::vec3(d, 0, 0));
+			previewPoints.push_back(swingPivot + glm::vec3(0, -d, 0));
+			previewPoints.push_back(swingPivot + glm::vec3(0, d, 0));
+			previewPoints.push_back(swingPivot + glm::vec3(0, 0, -d));
+			previewPoints.push_back(swingPivot + glm::vec3(0, 0, d));
+
+			// データをVBOへ転送
+			glBindBuffer(GL_ARRAY_BUFFER, debugVBO);
+			glBufferSubData(GL_ARRAY_BUFFER, 0, previewPoints.size() * sizeof(glm::vec3), previewPoints.data());
+
+			// meshProgram を使って単色(Shader次第)で描画
+			glUseProgram(meshProgram);
+			glm::mat4 mvp = projection * view; // モデル行列は単位行列（そのままワールド座標として扱う）
+			glUniformMatrix4fv(glGetUniformLocation(meshProgram, "mc"), 1, GL_FALSE, glm::value_ptr(mvp));
+			glUniformMatrix4fv(glGetUniformLocation(meshProgram, "model"), 1, GL_FALSE, glm::value_ptr(glm::mat4(1.0f)));
+
+			glBindVertexArray(debugVAO);
+			glDrawArrays(GL_LINE_STRIP, 0, segments + 1);             // 軌道
+			glDrawArrays(GL_LINES, segments + 1, 2);                  // 速度ベクトル
+			glDrawArrays(GL_LINES, segments + 3, 6);                  // 支点マーカー
+			glBindVertexArray(0);
+		}
+
 		// OpenGL 周りのエラーがないかチェック
 		errorcheck();
 
@@ -538,7 +732,8 @@ auto main() -> int {
 		ImGui::Separator();
 		ImGui::Text("Interaction Mode:");
 		ImGui::RadioButton("Camera Control", &isFireMode, 0); ImGui::SameLine();
-		ImGui::RadioButton("Shoot Sphere", &isFireMode, 1);
+		ImGui::RadioButton("Shoot Sphere", &isFireMode, 1); ImGui::SameLine();
+		ImGui::RadioButton("Swing", &isFireMode, 2);
 		ImGui::Separator(); // 区切り線
 
 		ImGui::Text("Camera Settings:");
