@@ -354,6 +354,32 @@ auto main() -> int {
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
 	glBindVertexArray(0);
 
+	// --- シミュレーション境界(Bounding Box)描画用のVAO/VBO/EBO ---
+	GLuint boundaryVAO, boundaryVBO, boundaryEBO;
+	glGenVertexArrays(1, &boundaryVAO);
+	glGenBuffers(1, &boundaryVBO);
+	glGenBuffers(1, &boundaryEBO);
+	float W = worldScale; // シミュレーション空間の最大サイズ
+	// 立方体の8つの頂点
+	glm::vec3 boundaryVertices[] = {
+		{0, 0, 0}, {W, 0, 0}, {W, 0, W}, {0, 0, W},
+		{0, W, 0}, {W, W, 0}, {W, W, W}, {0, W, W}
+	};
+	// 線分(GL_LINES)として描画するためのインデックスデータ(12本の辺 x 2頂点)
+	GLuint boundaryIndices[] = {
+		0, 1, 1, 2, 2, 3, 3, 0, // 底面
+		4, 5, 5, 6, 6, 7, 7, 4, // 上面
+		0, 4, 1, 5, 2, 6, 3, 7  // 側面
+	};
+	glBindVertexArray(boundaryVAO);
+	glBindBuffer(GL_ARRAY_BUFFER, boundaryVBO);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(boundaryVertices), boundaryVertices, GL_STATIC_DRAW);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, boundaryEBO);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(boundaryIndices), boundaryIndices, GL_STATIC_DRAW);
+	glBindVertexArray(0);
+
 	// 描画空間におけるカメラ生成
 	Camera camera;
 
@@ -619,6 +645,18 @@ auto main() -> int {
 
 		glBindVertexArray(obstacle.resource->vao);
 		glDrawElements(GL_TRIANGLES, obstacle.resource->indexCount, GL_UNSIGNED_INT, 0);
+		glBindVertexArray(0);
+
+		// --- シミュレーション境界の描画 ---
+		glUseProgram(meshProgram);
+		glm::mat4 mvp_boundary = projection * view; // 空間の原点にそのまま配置
+		glUniformMatrix4fv(glGetUniformLocation(meshProgram, "mc"), 1, GL_FALSE, glm::value_ptr(mvp_boundary));
+		glUniformMatrix4fv(glGetUniformLocation(meshProgram, "model"), 1, GL_FALSE, glm::value_ptr(glm::mat4(1.0f)));
+
+		glBindVertexArray(boundaryVAO);
+		// 24個のインデックスを GL_LINES (線分) として描画
+		glDrawElements(GL_LINES, 24, GL_UNSIGNED_INT, 0);
+		glBindVertexArray(0);
 
 		/*
 		glm::vec3 spherePos = glm::vec3(mpmphysics.obstacle_sphere);// 球の位置とサイズをシミュレーションデータから取得
