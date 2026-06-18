@@ -4,6 +4,10 @@
 #include <memory>
 #include "../core/MeshResource.h"
 
+// 実験機能なので使う宣言
+#define GLM_ENABLE_EXPERIMENTAL
+#include <GLM/gtx/quaternion.hpp>
+
 class SDFInstance {
 public:
     // リソースデータへのポインタ（複数インスタンスで同じリソースを共有）
@@ -15,7 +19,8 @@ public:
     glm::quat rotation{ 1,0,0,0 }; // クォータニオン回転
 
     // 物理パラメータ
-    glm::vec3 velocity{ 0.0f };
+    glm::vec3 velocity{ 0.0f };         // 並進速度ベクトル
+    glm::vec3 angularVelocity{ 0.0f };   // 角速度ベクトル
 
     // キャッシュ
     glm::mat4 modelMatrix{ 1.0f };  // モデル行列
@@ -23,14 +28,23 @@ public:
 
     /// コンストラクタ
     /// @param[in] res 空間内に存在するオブジェクトインスタンス
-    SDFInstance(std::shared_ptr<MeshResource> res) : resource(res) {
-        
-    }
+    SDFInstance(std::shared_ptr<MeshResource> res) : resource(res) {}
 
     /// オブジェクトの時間更新
     /// param[in] dt タイムステップ
     void update(float dt) {
+        // 並進の更新
         position += velocity * dt;
+
+        // 回転の更新(角速度からクォータニオンをまわす)
+        float angularSpeed = glm::length(angularVelocity);
+        if (angularSpeed > 1e-6f) {
+            glm::vec3 axis = angularVelocity / angularSpeed;
+            // dtあたりの回転量をクォータニオンで生成して合成
+            glm::quat deltaRot = glm::angleAxis(angularSpeed * dt, axis);
+            rotation = glm::normalize(deltaRot * rotation); // 誤差蓄積防止の正規化
+        }
+
         updateMatrices();
     }
 

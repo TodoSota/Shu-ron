@@ -280,11 +280,7 @@ public:
 		glm::dvec2 delta = current - lastPos;
 		lastPos = current;
 
-		// 左クリック中のみ変化量を返す
-		if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
-			return delta;
-		}
-		return { 0, 0 };
+		return delta;
 	}
 
 	/// ウィンドウの識別子を取り出す

@@ -50,6 +50,8 @@ uniform mat4 sdf_inv_model;
 uniform vec3 sdf_velocity;
 uniform vec3 sdf_aabb_min;
 uniform vec3 sdf_aabb_max;
+uniform vec3 sdf_angular_velocity; // 角速度
+uniform vec3 sdf_center;           // オブジェクトの回転中心（重心）座標
 
 void main() {
 	ivec3 coords = ivec3(gl_GlobalInvocationID.xyz);
@@ -147,8 +149,13 @@ void main() {
 			vec3 normal_world = normalize(mat3(transpose(sdf_inv_model)) * normal_local);
         
 			// 8. 衝突解決 (相対速度の押し出し)
+			vec3 r = pos - sdf_center;
+
+			// v_point = v_trans + ω × r
+			vec3 point_velocity = sdf_velocity + cross(sdf_angular_velocity, r);
+			
 			// grid_vel は現在のグリッドの速度(vec3)とします
-			vec3 rel_vel = v - sdf_velocity;
+			vec3 rel_vel = v - point_velocity;
 			float vn = dot(rel_vel, normal_world);
 
 			// 接触 + めり込み条件
@@ -173,7 +180,7 @@ void main() {
 					}
 				}
 
-				v = sdf_velocity + new_rel_vel;
+				v = point_velocity + new_rel_vel;
 			}
 		}
 	}
