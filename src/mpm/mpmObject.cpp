@@ -1,74 +1,74 @@
-/// }Œ`ŠÖ˜A‚Ìˆ—
-#include "mpmObject.h"
+/// å›³å½¢é–¢é€£ã®å‡¦ç†
+#include "MpmObject.h"
 
-/// ƒRƒ“ƒXƒgƒ‰ƒNƒ^
-/// @param[in] count ’¸“_”
-/// @param[in] gridSize ƒOƒŠƒbƒh(3DƒeƒNƒXƒ`ƒƒ)‚Ì‰ğ‘œ“x
-mpmObject::mpmObject(GLsizei count, int gridSize) :
-	// ’¸“_”z—ñƒIƒuƒWƒFƒNƒg‚ğì¬‚µ‚Ä vao ‚ğì¬‚·‚é
+/// ã‚³ãƒ³ã‚¹ãƒˆãƒ©ã‚¯ã‚¿
+/// @param[in] count é ‚ç‚¹æ•°
+/// @param[in] gridSize ã‚°ãƒªãƒƒãƒ‰(3Dãƒ†ã‚¯ã‚¹ãƒãƒ£)ã®è§£åƒåº¦
+MpmObject::MpmObject(GLsizei count, int gridSize) :
+	// é ‚ç‚¹é…åˆ—ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã‚’ä½œæˆã—ã¦ vao ã‚’ä½œæˆã™ã‚‹
 	vao{ []() {GLuint vao; glGenVertexArrays(1, &vao); return vao; }() },
-	// ’¸“_ƒoƒbƒtƒ@ƒIƒuƒWƒFƒNƒg‚ğì¬‚µ‚Ä vbo ‚ğì¬‚·‚é
+	// é ‚ç‚¹ãƒãƒƒãƒ•ã‚¡ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã‚’ä½œæˆã—ã¦ vbo ã‚’ä½œæˆã™ã‚‹
 	vbo{ []() {GLuint vbo; glGenBuffers(1, &vbo); return vbo; }() },
-	// ’¸“_‚Ì”‚ğ•Û‘¶
+	// é ‚ç‚¹ã®æ•°ã‚’ä¿å­˜
 	count{ count },
-	// ƒeƒNƒXƒ`ƒƒ‚ğì¬
+	// ãƒ†ã‚¯ã‚¹ãƒãƒ£ã‚’ä½œæˆ
 	gridTexX{ 0 },
 	gridTexY{ 0 },
 	gridTexZ{ 0 },
 	gridTexA{ 0 },
-	// ƒOƒŠƒbƒhƒTƒCƒY‚ğ•Û‘¶
+	// ã‚°ãƒªãƒƒãƒ‰ã‚µã‚¤ã‚ºã‚’ä¿å­˜
 	gridSize{ gridSize }
 {
-	// ƒoƒbƒtƒ@‚Ìİ’è
-	glBindVertexArray(vao);// vao‚ğŒ‹‡
-	glBindBuffer(GL_ARRAY_BUFFER, vbo);// vbo‚ğŒ‹‡‚µvao‚É‘g‚İ‚Ş
-	glBufferData(GL_ARRAY_BUFFER, sizeof(mpmParticle) * count, nullptr, GL_DYNAMIC_DRAW);// vbo‚Ìƒƒ‚ƒŠ‚ğŠm•Û‚µ’¸“_ˆÊ’uƒf[ƒ^‚ğ“]‘—
+	// ãƒãƒƒãƒ•ã‚¡ã®è¨­å®š
+	glBindVertexArray(vao);// vaoã‚’çµåˆ
+	glBindBuffer(GL_ARRAY_BUFFER, vbo);// vboã‚’çµåˆã—vaoã«çµ„ã¿è¾¼ã‚€
+	glBufferData(GL_ARRAY_BUFFER, sizeof(mpmParticle) * count, nullptr, GL_DYNAMIC_DRAW);// vboã®ãƒ¡ãƒ¢ãƒªã‚’ç¢ºä¿ã—é ‚ç‚¹ä½ç½®ãƒ‡ãƒ¼ã‚¿ã‚’è»¢é€
 
-	/// [in]•Ï” 0 ”Ô‚É position
-	/// [in]•Ï” 1 ”Ô‚É state(F•ª‚¯‚Åó‘Ô‚ğ•\¦)
-	 
-	// Œ‹‡‚³‚ê‚Ä‚¢‚évbo‚Ì position ‚ğ 0 ”Ô‚Æ‚µ‚Äİ’è
-	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(mpmParticle), (void*)offsetof(mpmParticle, position)) ;
-	glEnableVertexAttribArray(0); // 0 ”Ô‚Ìvbo‚ğ—LŒø‚É
+	/// [in]å¤‰æ•° 0 ç•ªã« position
+	/// [in]å¤‰æ•° 1 ç•ªã« state(è‰²åˆ†ã‘ã§çŠ¶æ…‹ã‚’è¡¨ç¤º)
 
-	// Œ‹‡‚³‚ê‚Ä‚¢‚évbo‚Ì state ‚ğ 1 ”Ô‚Æ‚µ‚Äİ’è
-	glVertexAttribIPointer(1, 1, GL_INT, sizeof(mpmParticle), (void*)offsetof(mpmParticle, state)); // int ‚È‚Ì‚Å 1 ¬•ª
-	glEnableVertexAttribArray(1); // 1 ”Ô‚Ìvbo‚ğ—LŒø‚É
+	// çµåˆã•ã‚Œã¦ã„ã‚‹vboã® position ã‚’ 0 ç•ªã¨ã—ã¦è¨­å®š
+	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(mpmParticle), (void*)offsetof(mpmParticle, position));
+	glEnableVertexAttribArray(0); // 0 ç•ªã®vboã‚’æœ‰åŠ¹ã«
 
-	// 3DƒeƒNƒXƒ`ƒƒ(MPMƒOƒŠƒbƒh)‚Ì¶¬Eİ’è
+	// çµåˆã•ã‚Œã¦ã„ã‚‹vboã® state ã‚’ 1 ç•ªã¨ã—ã¦è¨­å®š
+	glVertexAttribIPointer(1, 1, GL_INT, sizeof(mpmParticle), (void*)offsetof(mpmParticle, state)); // int ãªã®ã§ 1 æˆåˆ†
+	glEnableVertexAttribArray(1); // 1 ç•ªã®vboã‚’æœ‰åŠ¹ã«
+
+	// 3Dãƒ†ã‚¯ã‚¹ãƒãƒ£(MPMã‚°ãƒªãƒƒãƒ‰)ã®ç”Ÿæˆãƒ»è¨­å®š
 	auto createGridTex = [&](GLuint& texID) {
 		glGenTextures(1, &texID);
 
-		// RGBA32F ‚ğg—p: RGB =‰^“®—Ê(mvx, mvy, mvz), A=¿—Ê(m)
+		// RGBA32F ã‚’ä½¿ç”¨: RGB =é‹å‹•é‡(mvx, mvy, mvz), A=è³ªé‡(m)
 		glBindTexture(GL_TEXTURE_3D, texID);
-		// R32F ‚ÅŠm•Û Atomic ‚Ì‚½‚ß R32UI ‚Æ‚µ‚ÄƒoƒCƒ“ƒh
+		// R32F ã§ç¢ºä¿ Atomic ã®ãŸã‚ R32UI ã¨ã—ã¦ãƒã‚¤ãƒ³ãƒ‰
 		glTexImage3D(GL_TEXTURE_3D, 0, GL_R32F, gridSize, gridSize, gridSize, 0, GL_RED, GL_FLOAT, nullptr);
 
-		// ³Šm‚Èƒm[ƒh‚Ö‚Ì Read/Write ‚Ì‚½‚ß NEAREST ‚Å
+		// æ­£ç¢ºãªãƒãƒ¼ãƒ‰ã¸ã® Read/Write ã®ãŸã‚ NEAREST ã§
 		glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-	};
+		};
 
-	// 4–‡‚ÌƒeƒNƒXƒ`ƒƒ‚ğ¶¬Eİ’è
+	// 4æšã®ãƒ†ã‚¯ã‚¹ãƒãƒ£ã‚’ç”Ÿæˆãƒ»è¨­å®š
 	createGridTex(gridTexX);
 	createGridTex(gridTexY);
 	createGridTex(gridTexZ);
 	createGridTex(gridTexA);
 
-	// ˆ—I—¹‚ÌŒãn––
-	glBindTexture(GL_TEXTURE_3D, 0);	// ƒeƒNƒXƒ`ƒƒ‚Ì‘I‘ğ‚ğ‰ğœ
-	glBindVertexArray(0);				// vao‚ÌŒ‹‡‚ğ‰ğœ‚·‚é
-	glBindBuffer(GL_ARRAY_BUFFER, 0);	// vbo‚ÌŒ‹‡‚ğ‰ğœ‚·‚é
+	// å‡¦ç†çµ‚äº†ã®å¾Œå§‹æœ«
+	glBindTexture(GL_TEXTURE_3D, 0);	// ãƒ†ã‚¯ã‚¹ãƒãƒ£ã®é¸æŠã‚’è§£é™¤
+	glBindVertexArray(0);				// vaoã®çµåˆã‚’è§£é™¤ã™ã‚‹
+	glBindBuffer(GL_ARRAY_BUFFER, 0);	// vboã®çµåˆã‚’è§£é™¤ã™ã‚‹
 }
 
-mpmObject::~mpmObject() {
-	glDeleteVertexArrays(1, &vao);	// vao‚ğíœ
-	glDeleteBuffers(1, &vbo);		// vbo‚ğíœ
-	glDeleteTextures(1, &gridTexX);	//3DƒeƒNƒXƒ`ƒƒ‚ğíœ
-	glDeleteTextures(1, &gridTexY);	//3DƒeƒNƒXƒ`ƒƒ‚ğíœ
-	glDeleteTextures(1, &gridTexZ);	//3DƒeƒNƒXƒ`ƒƒ‚ğíœ
-	glDeleteTextures(1, &gridTexA);	//3DƒeƒNƒXƒ`ƒƒ‚ğíœ
+MpmObject::~MpmObject() {
+	glDeleteVertexArrays(1, &vao);	// vaoã‚’å‰Šé™¤
+	glDeleteBuffers(1, &vbo);		// vboã‚’å‰Šé™¤
+	glDeleteTextures(1, &gridTexX);	//3Dãƒ†ã‚¯ã‚¹ãƒãƒ£ã‚’å‰Šé™¤
+	glDeleteTextures(1, &gridTexY);	//3Dãƒ†ã‚¯ã‚¹ãƒãƒ£ã‚’å‰Šé™¤
+	glDeleteTextures(1, &gridTexZ);	//3Dãƒ†ã‚¯ã‚¹ãƒãƒ£ã‚’å‰Šé™¤
+	glDeleteTextures(1, &gridTexA);	//3Dãƒ†ã‚¯ã‚¹ãƒãƒ£ã‚’å‰Šé™¤
 }
