@@ -1,15 +1,15 @@
-#include "errorcheck.h"
+#include "Errorcheck.h"
 
-// ƒfƒoƒbƒOƒ‚[ƒh‚Ì‚Ì‚İ’è‹`
+// ãƒ‡ãƒãƒƒã‚°ãƒ¢ãƒ¼ãƒ‰ã®æ™‚ã®ã¿å®šç¾©
 #if defined(_DEBUG)
 
 #include <GL/glew.h>
 #include <iostream>
 
-/// OpenGL ‚ÌƒGƒ‰[‚ğƒ`ƒFƒbƒN‚·‚é
-/// @param[in] name ƒGƒ‰[”­¶‚É•W€ƒGƒ‰[o—Í‚Öo—Í‚·‚éƒtƒ@ƒCƒ‹–¼‚È‚Ç‚Ì•¶š—ñBnullptr‚È‚ço—Í‚È‚µ
-/// @param[in] line ƒGƒ‰[”­¶‚É•W€ƒGƒ‰[o—Í‚Öo—Í‚·‚és”Ô†‚È‚Ç‚Ì®”’l
-auto _errorcheck(const char* name, unsigned int line) -> void {
+/// OpenGL ã®ã‚¨ãƒ©ãƒ¼ã‚’ãƒã‚§ãƒƒã‚¯ã™ã‚‹
+/// @param[in] name ã‚¨ãƒ©ãƒ¼ç™ºç”Ÿæ™‚ã«æ¨™æº–ã‚¨ãƒ©ãƒ¼å‡ºåŠ›ã¸å‡ºåŠ›ã™ã‚‹ãƒ•ã‚¡ã‚¤ãƒ«åãªã©ã®æ–‡å­—åˆ—ã€‚nullptrãªã‚‰å‡ºåŠ›ãªã—
+/// @param[in] line ã‚¨ãƒ©ãƒ¼ç™ºç”Ÿæ™‚ã«æ¨™æº–ã‚¨ãƒ©ãƒ¼å‡ºåŠ›ã¸å‡ºåŠ›ã™ã‚‹è¡Œç•ªå·ãªã©ã®æ•´æ•°å€¤
+auto _Errorcheck(const char* name, unsigned int line) -> void {
 	const GLenum error{ glGetError() };
 
 	if (error != GL_NO_ERROR) {

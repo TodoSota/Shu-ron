@@ -1,13 +1,13 @@
 #include "InteractionController.h"
 #include "../core/Window.h"
 #include "../core/Camera.h"
-#include "../sdf/SDFInstance.h"
+#include "../sdf/SdfInstance.h"
 
 // ImGui の状態取得用（UI操作中は弾くため）
 #include "../../ImGui/imgui.h" 
 
 // 毎フレームの処理
-void InteractionController::update(Window& window, const Camera& camera, SDFInstance& obstacle, float dt) {
+void InteractionController::update(Window& window, const Camera& camera, SdfInstance& obstacle, float dt) {
     if (currentMode == 1) {
         handleShootMode(window, camera, obstacle);
     }
@@ -18,7 +18,7 @@ void InteractionController::update(Window& window, const Camera& camera, SDFInst
 }
 
 /// Shoot モードでの処理
-void InteractionController::handleShootMode(Window& window, const Camera& camera, SDFInstance& obstacle) {
+void InteractionController::handleShootMode(Window& window, const Camera& camera, SdfInstance& obstacle) {
     int currentState = glfwGetMouseButton(window.get(), GLFW_MOUSE_BUTTON_LEFT);
 
     if (!ImGui::GetIO().WantCaptureMouse && currentState == GLFW_PRESS && lastMouseState == GLFW_RELEASE) {
@@ -45,7 +45,7 @@ void InteractionController::handleShootMode(Window& window, const Camera& camera
 }
 
 /// Swing モードでの処理
-void InteractionController::handleSwingMode(Window& window, const Camera& camera, SDFInstance& obstacle, float dt) {
+void InteractionController::handleSwingMode(Window& window, const Camera& camera, SdfInstance& obstacle, float dt) {
     int currentState = glfwGetMouseButton(window.get(), GLFW_MOUSE_BUTTON_LEFT);
     glm::mat4 invView = glm::inverse(camera.getView());
     glm::mat4 invProj = glm::inverse(camera.getProjection(window.getAspect()));
@@ -136,7 +136,7 @@ void InteractionController::handleSwingMode(Window& window, const Camera& camera
 }
 
 // Renderer に渡すプレビュー用の頂点データを生成(計算)して返す
-std::vector<glm::vec3> InteractionController::calcPreviewPoints(const SDFInstance& obstacle) const {
+std::vector<glm::vec3> InteractionController::calcPreviewPoints(const SdfInstance& obstacle) const {
     std::vector<glm::vec3> previewPoints;
     if (swingState != SwingState::Dragging) return previewPoints;
 

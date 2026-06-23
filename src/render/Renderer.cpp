@@ -4,7 +4,7 @@
 #include "../core/shader.h"
 #include "../mpm/MpmObject.h"
 #include "../mpm/MpmPhysics.h"
-#include "../sdf/SDFInstance.h"
+#include "../sdf/SdfInstance.h"
 
 #include <GLM/gtc/type_ptr.hpp>
 
@@ -140,7 +140,7 @@ void Renderer::drawMpm(const MpmObject& MpmObject, const glm::mat4& view, const 
 }
 
 // 障害物（SDFインスタンス）の描画
-void Renderer::drawObstacle(const SDFInstance& obstacle, const glm::mat4& view, const glm::mat4& projection, const glm::mat4& model) {
+void Renderer::drawObstacle(const SdfInstance& obstacle, const glm::mat4& view, const glm::mat4& projection, const glm::mat4& model) {
     glUseProgram(meshProgram);
 
     glm::mat4 finalModel = model * obstacle.getModelMatrix();

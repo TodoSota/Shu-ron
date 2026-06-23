@@ -123,10 +123,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\mpm\MpmSimulator.cpp" />
     <ClCompile Include="src\mpm\MpmObject.cpp" />
     <ClCompile Include="src\controller\InteractionController.cpp" />
     <ClCompile Include="src\render\Renderer.cpp" />
-    <ClCompile Include="src\core\errorcheck.cpp" />
+    <ClCompile Include="src\core\Errorcheck.cpp" />
     <ClCompile Include="ImGui\imgui.cpp" />
     <ClCompile Include="ImGui\imgui_draw.cpp" />
     <ClCompile Include="ImGui\imgui_impl_glfw.cpp" />
@@ -135,7 +136,7 @@
     <ClCompile Include="ImGui\imgui_widgets.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\core\Object.cpp" />
-    <ClCompile Include="src\core\shader.cpp" />
+    <ClCompile Include="src\core\Shader.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include=".gitattributes" />
@@ -158,18 +159,19 @@
     <None Include="legacy\update.comp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\mpm\MpmSimulator.h" />
     <ClInclude Include="src\mpm\MpmObject.h" />
     <ClInclude Include="src\controller\InteractionController.h" />
     <ClInclude Include="src\mpm\MpmPhysics.h" />
     <ClInclude Include="src\render\Renderer.h" />
     <ClInclude Include="src\core\Camera.h" />
-    <ClInclude Include="src\core\errorcheck.h" />
+    <ClInclude Include="src\core\Errorcheck.h" />
     <ClInclude Include="src\core\Mesh.h" />
     <ClInclude Include="src\core\MeshResource.h" />
     <ClInclude Include="src\core\Object.h" />
-    <ClInclude Include="src\core\shader.h" />
+    <ClInclude Include="src\core\Shader.h" />
     <ClInclude Include="src\core\Window.h" />
-    <ClInclude Include="src\sdf\SDFInstance.h" />
+    <ClInclude Include="src\sdf\SdfInstance.h" />
     <ClInclude Include="src\tiny_obj_loader\tiny_obj_loader.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -7,7 +7,7 @@
 
 // 前方宣言
 struct MpmObject;
-class SDFInstance;
+class SdfInstance;
 struct MpmPhysics;
 
 // シミュレート対象・読み込みオブジェクト以外の全て
@@ -61,7 +61,7 @@ public:
     void drawMpm(const MpmObject& MpmObject, const glm::mat4& view, const glm::mat4& projection, const glm::mat4& model, bool useDebugColor);
 
     // 障害物（SDFインスタンス）の描画
-    void drawObstacle(const SDFInstance& obstacle, const glm::mat4& view, const glm::mat4& projection, const glm::mat4& model);
+    void drawObstacle(const SdfInstance& obstacle, const glm::mat4& view, const glm::mat4& projection, const glm::mat4& model);
 
     // シミュレーション境界の描画
     void drawBoundary(const glm::mat4& view, const glm::mat4& projection, const glm::mat4& model);

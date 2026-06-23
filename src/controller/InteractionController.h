@@ -12,7 +12,7 @@
 // 前方宣言
 class Window;
 struct Camera;
-class SDFInstance;
+class SdfInstance;
 
 // スイングの状態
 enum class SwingState {
@@ -50,20 +50,20 @@ private:
     /// @param[in] window 画面の主体。マウスの状態、クリック位置などを保持
     /// @param[in] camera view や projection などの行列を保持
     /// @param[in] obstacle 動きの主体となるオブジェクトのデータ
-    void handleShootMode(Window& window, const Camera& camera, SDFInstance& obstacle);
+    void handleShootMode(Window& window, const Camera& camera, SdfInstance& obstacle);
     /// Swing モードでの処理
     /// @param[in] window 画面の主体。マウスの状態、クリック位置などを保持
     /// @param[in] camera view や projection などの行列を保持
     /// @param[in] obstacle 動きの主体となるオブジェクトのデータ
     /// @param[in] dt シミュレーション内の 1 ステップの長さ
-    void handleSwingMode(Window& window, const Camera& camera, SDFInstance& obstacle, float dt);
+    void handleSwingMode(Window& window, const Camera& camera, SdfInstance& obstacle, float dt);
 
 public:
     InteractionController() = default;
     ~InteractionController() = default;
 
     // 毎フレーム呼ばれる更新処理
-    void update(Window& window, const Camera& camera, SDFInstance& obstacle, float dt);
+    void update(Window& window, const Camera& camera, SdfInstance& obstacle, float dt);
 
     // ImGuiと連携するためのモードGetter/Setter
     int getMode() const { return currentMode; }
@@ -74,5 +74,5 @@ public:
 
     /// Renderer に渡すプレビュー用の頂点データを生成(計算)して返す
     /// @param[in] obstacle スイングの主体となる物体のデータ
-    std::vector<glm::vec3> calcPreviewPoints(const SDFInstance& obstacle) const;
+    std::vector<glm::vec3> calcPreviewPoints(const SdfInstance& obstacle) const;
 };
