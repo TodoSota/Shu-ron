@@ -1,4 +1,4 @@
-# MPM Simulation using 3D Texture Grid (OpenGL / Compute Shader)
+# MPM Sand Simulation with Interactive SDF Collisions (OpenGL / Compute Shader)
 
 GPU上で動作するMPM（Material Point Method）による粉粒体シミュレーション。  
 従来のグリッド構造を**3Dテクスチャで代替**することで、データアクセスと並列処理の効率化を実現しています。
@@ -7,9 +7,9 @@ GPU上で動作するMPM（Material Point Method）による粉粒体シミュ�
 
 ## ■ デモ
 
-※ 粒子の落下・堆積挙動、および弾発射モード（SDFオブジェクトの射出）による動的なシミュレーション
+※ 粒子の落下・堆積挙動、および弾発射モード（SDFオブジェクトの射出）、スイング操作による動的なシミュレーション
 
-![demo3](media/demo3.gif)
+![demo3](media/demo4.gif)
 
 ---
 
@@ -31,8 +31,9 @@ GPU上で動作するMPM（Material Point Method）による粉粒体シミュ�
  - **リアルタイムMPM演算**: GPU（Compute Shader）による並列物理演算。
  - **3Dテクスチャ・グリッド**: `imageLoad/Store` を用いた高速かつO(1)の格子データアクセス。
  - **高度な物理モデル**: 土砂の崩落・堆積を表現する塑性変形・硬化モデルの実装。
- - **【NEW】SDF（符号付き距離関数）によるオブジェクト管理**: 外部モデル（OBJ等）からSDFテクスチャを生成し、シミュレーション空間内に複雑な障害物として配置・接触判定が可能。
- - **【NEW】インタラクティブな射出システム**: カメラの逆行列レイキャストを用いて、任意の形状（SDFインスタンス）を任意の方向・初速で射出・衝突させるモードを実装。
+ - **【NEW】SDFによるオブジェクト管理**: 外部モデル（OBJ等）からSDFテクスチャを生成し、シミュレーション空間内に複雑な障害物として配置・接触判定が可能。
+ - **【NEW】インタラクティブな操作系 (Shoot & Swing)**: カメラの逆行列レイキャストを用いて、SDFインスタンスを任意の方向へ発射（Shoot）したり、マウスドラッグからキネマティクス軌道を計算して振り下ろす（Swing）直感的な操作を実装。
+ - **【NEW】クリーンアーキテクチャ (MVC)**: 司令塔となる `main.cpp` から生OpenGL関数や複雑な計算を排除し、Model(物理演算)、View(描画)、Controller(入力・操作) を完全に分離したモダンなクラス設計を採用。
  - **視認性の向上**: 粒子の状態（弾性・塑性）に応じたカラーリングに加え、材料の違い（砂・石）を判別する描画システム。
 ---
 
@@ -88,7 +89,7 @@ P2G（粒子→格子）ステップでの複数粒子からの同時書き込�
 
 詳細な設計・実装については以下を参照：
 
-- [Architecture](docs/architecture.md) : ソースコードの配置とシステムフロー
+- [Architecture](docs/architecture.md) : ソースコードの配置、クラス構成とシステムフロー
 - [Implementation Details](docs/implementation.md) : 3Dテクスチャグリッドと計算ロジック
 - [Issues and Fixes](docs/issues_and_fixes.md) : 開発中のバグ修正と改善の記録
 
