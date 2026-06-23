@@ -3,9 +3,7 @@
 
 #include "core/Window.h"		// ウィンドウの生成から入力などの処理
 #include "core/Camera.h"		// 3D空間におけるカメラ位置
-#include "core/Errorcheck.h"	// OepnGL のエラーチェック
-#include "core/Shader.h"		// シェーダー読み込み処理
-#include "core/Object.h"		// 描画のためのデータパッケージ
+#include "core/Errorcheck.h"	// OpenGL のエラーチェック
 #include "core/MeshResource.h"	// SDFに存在するオブジェクトのデータ
 #include "sdf/SdfInstance.h"	// SDFに登録するオブジェクト
 #include "mpm/MpmObject.h"		// MPM 用の描画データパッケージ
@@ -120,29 +118,28 @@ auto main() -> int {
 	//const float E = 3.537e5f;	// ヤング率
 	const float E = 5e4f;	// ヤング率
 	const float Nu = 0.3f;	// ポアソン比
-	const float GridSpacing = kWorldScale / (float)kGrid;	// グリッドの間隔
+	const float kGridSpacing = kWorldScale / (float)kGrid;	// グリッドの間隔
 
 	// 空間における設定
 	MpmPhysics mpmSimParam{
-		// シミュレーション空間
 		{0.0f, -9.8f, 0.0f},// 重力
 		1.0 / 1000.0f,		// 時間間隔
 		{0.0f, 1.0f, 0.0f},	// 地面の法線
 		0.1f,				// 地面の高さ
 		0.5f,				// 地面の反発係数
 		0.6f,				// 地面の摩擦係数
-		GridSpacing,			// グリッドの間隔
-		1.0f / GridSpacing,	// 間隔の逆数
+		kGridSpacing,		// グリッドの間隔
+		1.0f / kGridSpacing,// 間隔の逆数
 
 		// 粒子
-		0.2f,												// 粒子の反発係数
-		pow(GridSpacing * 0.5f, 3.0f),						// 粒子の体積
+		0.2f,											// 粒子の反発係数
+		pow(kGridSpacing * 0.5f, 3.0f),					// 粒子の体積
 		E / (2.0f * (1.0f + Nu)),						// 粒子のラメ係数
-		E * Nu / ((1.0f + Nu) * (1.0f - 2.0f * Nu)),// 粒子のラメ係数
-		(GridSpacing * 0.5f) * (GridSpacing * 0.5f) * (GridSpacing * 0.5f) * 400.0f,// 粒子の質量
-		0.01f,												// 粒子の半径
-		0.0001f,											// 粒子の重なり
-		0,													// 調整
+		E * Nu / ((1.0f + Nu) * (1.0f - 2.0f * Nu)),	// 粒子のラメ係数
+		(kGridSpacing * 0.5f) * (kGridSpacing * 0.5f) * (kGridSpacing * 0.5f) * 400.0f,// 粒子の質量
+		0.01f,											// 粒子の半径
+		0.0001f,										// 粒子の重なり
+		0,												// 調整
 
 		// 障害物
 		{0.5f, 0.1f, 0.5f, 0.1f},
