@@ -13,9 +13,9 @@
 // ImGui の組み込み
 #define USE_IMGUI true
 #if USE_IMGUI
-#	include "../ImGui/imgui.h"
-#	include "../ImGui/imgui_impl_glfw.h"
-#	include "../ImGui/imgui_impl_opengl3.h"
+#	include "../../ImGui/imgui.h"
+#	include "../../ImGui/imgui_impl_glfw.h"
+#	include "../../ImGui/imgui_impl_opengl3.h"
 #endif
 
 // 標準ライブラリ

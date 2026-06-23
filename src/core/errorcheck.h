@@ -1,21 +1,21 @@
 #pragma once
 
 #if defined(_DEBUG)
-/// OpenGL �̃G���[�`�F�b�N(API�Ȃ̂ŃR���p�C�����G���[���b�Z�[�W��f���Ȃ�)
-/// @param[in] name �G���[�������ɕW���G���[�o�͂֏o�͂���t�@�C�����Ȃǂ̕�����Bnullptr�Ȃ�o�͂Ȃ�
-/// @param[in] line �G���[�������ɕW���G���[�o�͂֏o�͂���s�ԍ��Ȃǂ̐����l
-extern auto _errorcheck(const char* name, unsigned int line) -> void;
+/// OpenGL のエラーチェック(APIなのでコンパイラがエラーメッセージを吐かない)
+/// @param[in] name エラー発生時に標準エラー出力へ出力するファイル名などの文字列。nullptrなら出力なし
+/// @param[in] line エラー発生時に標準エラー出力へ出力する行番号などの整数値
+extern auto _Errorcheck(const char* name, unsigned int line) -> void;
 
-/// OpenGL �̃G���[�������m���Ƀ\�[�X�t�@�C���̖��O�ƍs�ԍ�������
-/// @def errorcheck()
-/// @note ���̃}�N����u�����ʒu���O�ŃG���[���������Ă������A�}�N�����������t�@�C�����ƍs�ԍ����o��
-/// �����[�X�r���h�̎��ɂ͖�������
-# define errorcheck() _errorcheck(__FILE__, __LINE__)
+/// OpenGL のエラー発生検知時にソースファイルの名前と行番号を示す
+/// @def Errorcheck()
+/// @note このマクロを置いた位置より前でエラーが発生していた時、マクロをおいたファイル名と行番号を出力
+/// リリースビルドの時には無視する
+# define Errorcheck() _Errorcheck(__FILE__, __LINE__)
 #else
-# define errorcheck()
+# define Errorcheck()
 #endif
 
-class errorcheck
+class Errorcheck
 {
 };
 

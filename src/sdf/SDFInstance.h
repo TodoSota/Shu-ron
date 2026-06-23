@@ -8,7 +8,7 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include <GLM/gtx/quaternion.hpp>
 
-class SDFInstance {
+class SdfInstance {
 public:
     // リソースデータへのポインタ（複数インスタンスで同じリソースを共有）
     std::shared_ptr<MeshResource> resource;
@@ -28,7 +28,7 @@ public:
 
     /// コンストラクタ
     /// @param[in] res 空間内に存在するオブジェクトインスタンス
-    SDFInstance(std::shared_ptr<MeshResource> res) : resource(res) {}
+    SdfInstance(std::shared_ptr<MeshResource> res) : resource(res) {}
 
     /// オブジェクトの時間更新
     /// param[in] dt タイムステップ
