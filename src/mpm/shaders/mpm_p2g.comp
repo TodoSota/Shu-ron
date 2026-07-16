@@ -25,7 +25,7 @@ struct mpmParticle {
 	 int padding[3];		//調整
 };
 
-layout(std430, binding = 0) buffer mpmBuffer {
+layout(std430, binding = 0) readonly buffer mpmBuffer {
 	mpmParticle p[];
 };
 

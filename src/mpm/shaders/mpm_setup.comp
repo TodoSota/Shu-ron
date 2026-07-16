@@ -1,30 +1,30 @@
 #version 430 core
 
-// ƒOƒŠƒbƒh‚Ì3ŸŒ³“I‚ÉƒŠƒZƒbƒg‚·‚é‚½‚ß 8*8*8 ‚É—§•û‘ÌƒXƒŒƒbƒh‚Å
+// ã‚°ãƒªãƒƒãƒ‰ã®3æ¬¡å…ƒçš„ã«ãƒªã‚»ãƒƒãƒˆã™ã‚‹ãŸã‚ 8*8*8 ã«ç«‹æ–¹ä½“ã‚¹ãƒ¬ãƒƒãƒ‰ã§
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 
-// 3DƒeƒNƒXƒ`ƒƒ
-layout(r32ui, binding = 0) uniform uimage3D gridIMX;	// ‰^“®—Ê X
-layout(r32ui, binding = 1) uniform uimage3D gridIMY;	// ‰^“®—Ê Y
-layout(r32ui, binding = 2) uniform uimage3D gridIMZ;	// ‰^“®—Ê Z
-layout(r32ui, binding = 3) uniform uimage3D gridIMM;	// ¿—Ê M
+// 3Dãƒ†ã‚¯ã‚¹ãƒãƒ£
+layout(r32ui, binding = 0) uniform writeonly uimage3D gridIMX;	// é‹å‹•é‡ X
+layout(r32ui, binding = 1) uniform writeonly uimage3D gridIMY;	// é‹å‹•é‡ Y
+layout(r32ui, binding = 2) uniform writeonly uimage3D gridIMZ;	// é‹å‹•é‡ Z
+layout(r32ui, binding = 3) uniform writeonly uimage3D gridIMM;	// è³ªé‡ M
 
 void main() {
-	// ƒXƒŒƒbƒh‚Ì’S“–ƒOƒŠƒbƒhÀ•W  (x, y, z)
+	// ã‚¹ãƒ¬ãƒƒãƒ‰ã®æ‹…å½“ã‚°ãƒªãƒƒãƒ‰åº§æ¨™  (x, y, z)
 	ivec3 coords = ivec3(gl_GlobalInvocationID.xyz);
 
-	// ƒeƒNƒXƒ`ƒƒƒTƒCƒY
+	// ãƒ†ã‚¯ã‚¹ãƒãƒ£ã‚µã‚¤ã‚º
 	ivec3 size = imageSize(gridIMX);
 
-	// ”ÍˆÍŠOƒAƒNƒZƒX–h~
+	// ç¯„å›²å¤–ã‚¢ã‚¯ã‚»ã‚¹é˜²æ­¢
 	if (coords.x >= size.x || coords.y >= size.y || coords.z >= size.z) {
 		return;
 	}
 
-	// 0.0f ‚ğ uint ‚Ìƒrƒbƒg•\Œ»‚É•ÏŠ·‚µŠi”[
-	uint zero = floatBitsToUint(0.0);
+	// ã‚¼ãƒ­ã¯ãƒ“ãƒƒãƒˆè¡¨ç¾ã§ã‚‚ã‚¼ãƒ­ãªã®ã§ãã®ã¾ã¾ã§
+	uint zero = uvec4(0u);
 
-	// ƒOƒŠƒbƒh‚ğ 0‚Å‰Šú‰» (‰^“®—Ê, ¿—Ê : 0)
+	// ã‚°ãƒªãƒƒãƒ‰ã‚’ 0ã§åˆæœŸåŒ– (é‹å‹•é‡, è³ªé‡ : 0)
 	imageStore(gridIMX, coords, uvec4(zero));
 	imageStore(gridIMY, coords, uvec4(zero));
 	imageStore(gridIMZ, coords, uvec4(zero));
