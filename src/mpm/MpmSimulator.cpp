@@ -160,10 +160,10 @@ void MpmSimulator::step(const SdfInstance& obstacle) {
     // [G2P] グリッドからパーティクルへ速度と変形勾配を書き戻し
     glUseProgram(mpmG2P);
     glDispatchCompute(particleGroups, 1, 1);
-    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
     // [Move] パーティクルの最終位置を更新
     glUseProgram(mpmMove);
     glDispatchCompute(particleGroups, 1, 1);
-    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT |GL_BUFFER_UPDATE_BARRIER_BIT);   // SSBO書き換え待ち + 記録の控え作成準備(Timeline)
 }
