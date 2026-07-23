@@ -22,7 +22,7 @@ void main() {
 	}
 
 	// ゼロはビット表現でもゼロなのでそのままで
-	uint zero = uvec4(0u);
+	uint zero = 0u;
 
 	// グリッドを 0で初期化 (運動量, 質量 : 0)
 	imageStore(gridIMX, coords, uvec4(zero));

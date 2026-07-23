@@ -5,10 +5,7 @@
 /// @param[in] count 頂点数
 /// @param[in] gridSize グリッド(3Dテクスチャ)の解像度
 MpmObject::MpmObject(GLsizei count, int gridSize) :
-	// 頂点配列オブジェクトを作成して vao を作成する
-	vao{ []() {GLuint vao; glGenVertexArrays(1, &vao); return vao; }() },
-	// 頂点バッファオブジェクトを作成して vbo を作成する
-	vbo{ []() {GLuint vbo; glGenBuffers(1, &vbo); return vbo; }() },
+	readBuffer{ 0 },
 	// 頂点の数を保存
 	count{ count },
 	// テクスチャを作成
@@ -19,21 +16,28 @@ MpmObject::MpmObject(GLsizei count, int gridSize) :
 	// グリッドサイズを保存
 	gridSize{ gridSize }
 {
-	// バッファの設定
-	glBindVertexArray(vao);// vaoを結合
-	glBindBuffer(GL_ARRAY_BUFFER, vbo);// vboを結合しvaoに組み込む
-	glBufferData(GL_ARRAY_BUFFER, sizeof(MpmParticle) * count, nullptr, GL_DYNAMIC_DRAW);// vboのメモリを確保し頂点位置データを転送
+	// VAO/VBO を2つ生成
+	glGenVertexArrays(2, vao);
+	glGenBuffers(2, vbo);
 
-	/// [in]変数 0 番に position
-	/// [in]変数 1 番に state(色分けで状態を表示)
+	// それぞれのオブジェクトを作成・設定する
+	for (int i = 0; i < 2; i++) {
+		// バッファの設定
+		glBindVertexArray(vao[i]);// vaoを結合
+		glBindBuffer(GL_ARRAY_BUFFER, vbo[i]);// vboを結合しvaoに組み込む
+		glBufferData(GL_ARRAY_BUFFER, sizeof(MpmParticle) * count, nullptr, GL_DYNAMIC_DRAW);// vboのメモリを確保し頂点位置データを転送
 
-	// 結合されているvboの position を 0 番として設定
-	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(MpmParticle), (void*)offsetof(MpmParticle, position));
-	glEnableVertexAttribArray(0); // 0 番のvboを有効に
+		/// [in]変数 0 番に position
+		/// [in]変数 1 番に state(色分けで状態を表示)
 
-	// 結合されているvboの state を 1 番として設定
-	glVertexAttribIPointer(1, 1, GL_INT, sizeof(MpmParticle), (void*)offsetof(MpmParticle, state)); // int なので 1 成分
-	glEnableVertexAttribArray(1); // 1 番のvboを有効に
+		// 結合されているvboの position を 0 番として設定
+		glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(MpmParticle), (void*)offsetof(MpmParticle, position));
+		glEnableVertexAttribArray(0); // 0 番のvboを有効に
+
+		// 結合されているvboの state を 1 番として設定
+		glVertexAttribIPointer(1, 1, GL_INT, sizeof(MpmParticle), (void*)offsetof(MpmParticle, state)); // int なので 1 成分
+		glEnableVertexAttribArray(1); // 1 番のvboを有効に
+	}
 
 	// 3Dテクスチャ(MPMグリッド)の生成・設定
 	auto createGridTex = [&](GLuint& texID) {
@@ -50,7 +54,7 @@ MpmObject::MpmObject(GLsizei count, int gridSize) :
 		glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-		};
+	};
 
 	// 4枚のテクスチャを生成・設定
 	createGridTex(gridTexX);
@@ -65,8 +69,8 @@ MpmObject::MpmObject(GLsizei count, int gridSize) :
 }
 
 MpmObject::~MpmObject() {
-	glDeleteVertexArrays(1, &vao);	// vaoを削除
-	glDeleteBuffers(1, &vbo);		// vboを削除
+	glDeleteVertexArrays(2, vao);	// vaoを削除
+	glDeleteBuffers(2, vbo);		// vboを削除
 	glDeleteTextures(1, &gridTexX);	//3Dテクスチャを削除
 	glDeleteTextures(1, &gridTexY);	//3Dテクスチャを削除
 	glDeleteTextures(1, &gridTexZ);	//3Dテクスチャを削除

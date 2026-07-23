@@ -17,7 +17,6 @@ private:
     GLuint mpmP2G{ 0 };
     GLuint mpmGrid{ 0 };
     GLuint mpmG2P{ 0 };
-    GLuint mpmMove{ 0 };
 
     // --- シミュレーションのコアデータ ---
     MpmObject mpmObject;
@@ -53,7 +52,10 @@ public:
     // --- ゲッター ---
     /// 描画(Renderer/h/.cpp)に渡すためのデータ取得
     const MpmObject& getMpmObject() const { return mpmObject; }
-
+    GLuint getRenderVao() const { return MpmSimulator::getMpmObject().getRenderVao(); }
+    GLuint getReadVbo() const { return MpmSimulator::getMpmObject().getReadVbo(); }
+    GLuint getWriteVbo() const { return MpmSimulator::getMpmObject().getWriteVbo(); }
+    GLuint getReadBuffer() const { return MpmSimulator::getMpmObject().readBuffer; }
 
     // --- 初期化・設定 
 

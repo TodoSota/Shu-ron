@@ -181,7 +181,7 @@ auto main() -> int {
 	bool stepFrame{ false };
 
 	// サブステップ
-	int subSteps = 16;
+	int subSteps = 1;
 
 	// ウィンドウ起動中
 	while (window) {
@@ -222,14 +222,12 @@ auto main() -> int {
 			}
 			// コマ送り要求完了のためリセット
 			stepFrame = false;
-
 			// シミュレーション状況をタイムラインへ記録
-			timeline.recordFrame(mpmSimulator.getMpmObject().vbo, &obstacle);
+			timeline.recordFrame(mpmSimulator.getReadVbo(), &obstacle);
 		}
 		else {
 			// 一時停止中もプレビューなどは更新する
 			controller.update(window, camera, obstacle, currentDt);
-			printf("Check");
 		}
 
 		// 画面の描画
@@ -360,7 +358,7 @@ auto main() -> int {
 			timeline.setPlaybackFrame(currentPlaybackFrame);
 
 			// 指定した論理フレームの状態をGPU/CPUに復元
-			timeline.restoreToFrame(currentPlaybackFrame, mpmSimulator.getMpmObject().vbo, &obstacle);
+			timeline.restoreToFrame(currentPlaybackFrame, mpmSimulator.getMpmObject().getReadVbo(), &obstacle);
 		}
 
 		// リスタート

@@ -25,7 +25,8 @@ struct mpmParticle {
 	 int padding[3];		//調整
 };
 
-layout(std430, binding = 0) buffer mpmBuffer { mpmParticle p[]; };
+layout(std430, binding = 0) readonly buffer ParticleIn { mpmParticle particleIn[]; };
+layout(std430, binding = 1) writeonly buffer ParticleOut { mpmParticle particleOut[]; };
 
 // MPMの粒子群の物理パラメータ
 layout(std140, binding = 1) uniform MPMPhysics {
@@ -107,13 +108,14 @@ void svd(mat3 F, out mat3 U, out mat3 Sigma, out mat3 V) {
 
 void main() {
 	uint idx = gl_GlobalInvocationID.x;
-	if (idx >= p.length()) return;
+	if (idx >= particleIn.length()) return;
 
-	if (timestep < 1e-6) { p[idx].position.y += 0.01; }
+	// 明示的に更新しない分も含めて結果を先にコピー
+	particleOut[idx] = particleIn[idx];
 
 	// 1. 座標と重みの計算
 	// 座標とインデックス
-	vec3 x = p[idx].position.xyz;
+	vec3 x = particleIn[idx].position.xyz;
 	vec3 fx = x * inv_dx;
 	ivec3 base = ivec3(floor(fx - 0.5));
 	vec3 weight_dist = fx - vec3(base);
@@ -154,7 +156,7 @@ void main() {
 	}
 
 	// 3. 変形勾配 F の更新
-	mat3 F_new = (mat3(1.0) + timestep * new_C) * mat3(p[idx].deformation);
+	mat3 F_new = (mat3(1.0) + timestep * new_C) * mat3(particleIn[idx].deformation);
 
 	// 4. 塑性変形
 	mat3 U, sig, V;
@@ -166,44 +168,43 @@ void main() {
 	epsilon[1] = log(max(sig[1][1], 1e-6));
 	epsilon[2] = log(max(sig[2][2], 1e-6));
 
-	float tr_e = epsilon[0] + epsilon[1] + epsilon[2] + p[idx].vc;
+	float tr_e = epsilon[0] + epsilon[1] + epsilon[2] + particleIn[idx].vc;
 	vec3 e_hat = vec3(epsilon[0], epsilon[1], epsilon[2]) - tr_e / 3.0;
 	float e_hat_norm = length(e_hat);
 
 	// 降伏関数にて判定
-	float delta_gamma = e_hat_norm + (3.0 * p_lambda + 2.0 * p_mu) / (2.0 * p_mu) * tr_e * p[idx].alpha;
+	float delta_gamma = e_hat_norm + (3.0 * p_lambda + 2.0 * p_mu) / (2.0 * p_mu) * tr_e * particleIn[idx].alpha;
 
 	vec3 new_epsilon;
 	vec3 epsilon_v = vec3(epsilon[0], epsilon[1], epsilon[2]);
 
 	// 変形の状態判定
+	int next_state = 0;
 	if (e_hat_norm < 1e-8 || tr_e > 0.0) {
 		// 特になし
 		new_epsilon = vec3(0.0); // 0 とするとつぶれる可能性アリ
 		//new_epsilon = epsilon_v;
-		p[idx].state = 0;
 	} else if (delta_gamma <= 0.0) {
 		// 弾性域
 		new_epsilon = epsilon_v;
-		p[idx].state = 1;
+		next_state = 1;
 	} else {
 		// 塑性域
 		new_epsilon = epsilon_v - (delta_gamma / e_hat_norm) * e_hat;
-		p[idx].state = 2;
+		next_state = 2;
 	}
 
 	// 5. 硬化
 	float delta_q = 0.0;
-	if (p[idx].state == 0) {
+	if (next_state == 0) {
 		delta_q = length(epsilon_v);
-	} else if (p[idx].state == 2) {
+	} else if (next_state == 2) {
 		delta_q = delta_gamma;
 	}
-	p[idx].q += delta_q;
 
-	float phi = 35.0 + (9.0 * p[idx].q - 3.0) * exp(-0.2 * p[idx].q);
+	delta_q = delta_q + particleIn[idx].q;
+	float phi = 35.0 + (9.0 * delta_q - 3.0) * exp(-0.2 * delta_q);
 	phi = radians(phi);
-	p[idx].alpha = sqrt(2.0/3.0) * (2.0 * sin(phi)) / (3.0 - sin(phi));
 
 	// 結果の書き戻し
 	mat3 sig_new = mat3(0.0);
@@ -216,10 +217,13 @@ void main() {
 	float det_before = determinant(F_new);
 	float det_after = determinant(F_after);
 
-	p[idx].vc += -log(max(det_after, 1e-6)) + log(max(det_before, 1e-6)); // 行列がつぶれ 0 の場合をなくす
-	p[idx].position.xyz += new_v * timestep; // 補正後の位置を追加
-	p[idx].deformation = mat4(F_after);
-	p[idx].velocity = vec4(new_v, 0);
-	p[idx].affineC = mat4(new_C);
+	particleOut[idx].state = next_state;
+	particleOut[idx].q = delta_q;
+	particleOut[idx].alpha = sqrt(2.0/3.0) * (2.0 * sin(phi)) / (3.0 - sin(phi));
+	particleOut[idx].vc = particleIn[idx].vc -log(max(det_after, 1e-6)) + log(max(det_before, 1e-6)); // 行列がつぶれ 0 の場合をなくす
+	particleOut[idx].position.xyz += new_v * timestep; // 補正後の位置を追加
+	particleOut[idx].deformation = mat4(F_after);
+	particleOut[idx].velocity = vec4(new_v, 0);
+	particleOut[idx].affineC = mat4(new_C);
 
 }

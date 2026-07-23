@@ -106,6 +106,7 @@
     <None Include="README.md" />
     <None Include=".gitignore" />
     <None Include=".gitattributes" />
+    <None Include="src\mpm\shaders\timeline_record.comp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\core\Errorcheck.h">

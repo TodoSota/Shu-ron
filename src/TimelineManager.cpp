@@ -1,5 +1,7 @@
 #include "TimelineManager.h"
+#include "core/Shader.h"
 #include "mpm/MpmObject.h"
+#include <GLFW/glfw3.h>
 
 // コンストラクタ
 /// @param [in] maxFrames リングバッファの容量
@@ -12,6 +14,12 @@ TimelineManager::TimelineManager(int maxFrames, int particleCount, int sdfCount)
     // メンバ変数取得
     particleBytes = sizeof(MpmParticle);
     frameStride = particleBytes * static_cast<size_t>(particleCount);
+
+    // コンピュートシェーダーのロード
+    recordProgram = loadCompute("src/mpm/shaders/timeline_record.comp");
+
+    // Uniform ロケーションの取得
+    writeOffsetLoc = glGetUniformLocation(recordProgram, "writeOffset");
 
     // バッファ取得
     glGenBuffers(1, &historyVbo);
@@ -27,6 +35,7 @@ TimelineManager::TimelineManager(int maxFrames, int particleCount, int sdfCount)
 /// デストラクタ
 TimelineManager::~TimelineManager() {
     glDeleteBuffers(1, &historyVbo);
+    glDeleteProgram(recordProgram);
 }
 
 /// 1フレーム分のシミュレーションの状態を記録
@@ -35,12 +44,28 @@ TimelineManager::~TimelineManager() {
 void TimelineManager::recordFrame(GLuint sourceVbo, const SdfInstance* sdfs) {
     assert(sdfs != nullptr);
 
+    // データバッファのバインド
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, sourceVbo);  // 計算用の VBO をセット
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, historyVbo); // 結果用の VBO をセット
+    
+    int particleGroups = (particleCount + 63) / 64; // パーティクル数用のグループ数
+    // [record_Frame] VBO の記録
+    glUseProgram(recordProgram);
+    glUniform1ui(writeOffsetLoc, static_cast<GLuint>(headIndex * particleCount)); // Uniform 変数の送信
+    glDispatchCompute(particleGroups, 1, 1);
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+    // バインドの解除
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, 0);  // 計算用の VBO
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, 0); // 結果用の VBO
+
+    /*
     // オフセット計算を size_t で(64bit環境でも稼働するため)
     size_t writeOffset = static_cast<size_t>(headIndex) * frameStride;
 
     glBindBuffer(GL_COPY_READ_BUFFER, sourceVbo);
     glBindBuffer(GL_COPY_WRITE_BUFFER, historyVbo);
-
+    
     // size_t を GLintptr と GLsizeiptr へキャストして、バッファ内容をコピー
     glCopyBufferSubData(
         GL_COPY_READ_BUFFER,
@@ -53,7 +78,8 @@ void TimelineManager::recordFrame(GLuint sourceVbo, const SdfInstance* sdfs) {
     // 書き込み対象をバインド
     glBindBuffer(GL_COPY_READ_BUFFER, 0);
     glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
-
+    */
+    
     // SDF状態の記録
     for (int i = 0; i < sdfCount; ++i) {
         int index = headIndex * sdfCount + i;

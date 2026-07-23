@@ -152,6 +152,7 @@
     <None Include="src\mpm\shaders\mpm_p2g.comp" />
     <None Include="src\mpm\shaders\mpm_setup.comp" />
     <None Include="packages.config" />
+    <None Include="src\mpm\shaders\timeline_record.comp" />
     <None Include="src\render\mesh.frag" />
     <None Include="src\render\mesh.vert" />
     <None Include="src\render\point.frag" />

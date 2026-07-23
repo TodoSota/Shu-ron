@@ -16,9 +16,8 @@ MpmSimulator::MpmSimulator(int particleCount, int gridSize, float worldScale)
     mpmP2G = loadCompute("src/mpm/shaders/mpm_p2g.comp");
     mpmGrid = loadCompute("src/mpm/shaders/mpm_grid.comp");
     mpmG2P = loadCompute("src/mpm/shaders/mpm_g2p.comp");
-    mpmMove = loadCompute("src/mpm/shaders/mpm_move.comp");
 
-    if (mpmSetup == 0 || mpmP2G == 0 || mpmGrid == 0 || mpmG2P == 0 || mpmMove == 0) {
+    if (mpmSetup == 0 || mpmP2G == 0 || mpmGrid == 0 || mpmG2P == 0) {
         std::cerr << "Error: Can not create MPM simulator compute shaders." << std::endl;
     }
 
@@ -43,7 +42,6 @@ MpmSimulator::~MpmSimulator() {
     glDeleteProgram(mpmP2G);
     glDeleteProgram(mpmGrid);
     glDeleteProgram(mpmG2P);
-    glDeleteProgram(mpmMove);
     glDeleteBuffers(1, &physicsUbo);
 }
 
@@ -53,8 +51,8 @@ void MpmSimulator::resetParticles(float scale, bool sphere) {
     std::random_device seed_gen;
     std::mt19937 engine(seed_gen());
 
-    // vboをバインドし頂点データをマップ
-    glBindBuffer(GL_ARRAY_BUFFER, mpmObject.vbo);
+    // 0番の方のvboをバインドし頂点データをマップ
+    glBindBuffer(GL_ARRAY_BUFFER, mpmObject.vbo[0]);
 
     const auto position = static_cast<MpmParticle*>(glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY));
 
@@ -95,8 +93,16 @@ void MpmSimulator::resetParticles(float scale, bool sphere) {
         // 石の色を少し混ぜる・確率は 0,05f のマジックナンバー
         position[i].padding[0] = (matDist(engine) < 0.05f) ? 1 : 0;
     }
+    glUnmapBuffer(GL_ARRAY_BUFFER); // 情報入力
 
-    glUnmapBuffer(GL_ARRAY_BUFFER);
+    // もう片方(1番)にコピーする
+    glBindBuffer(GL_COPY_READ_BUFFER, mpmObject.vbo[0]);
+    glBindBuffer(GL_COPY_WRITE_BUFFER, mpmObject.vbo[1]);
+    glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, 0, sizeof(MpmParticle) * mpmObject.count);
+
+    // 書き込みバッファ設定、コピー対象設定解除
+    glBindBuffer(GL_COPY_READ_BUFFER, 0);
+    glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
@@ -111,6 +117,10 @@ void MpmSimulator::setPhysics(const MpmPhysics& physics) {
 
 /// コンピュートシェーダーを実行し、シミュレーションを1ステップ進める
 void MpmSimulator::step(const SdfInstance& obstacle) {
+    // ダブルバッファの選択
+    GLuint readVbo = MpmSimulator::getReadVbo();
+    GLuint writeVbo = MpmSimulator::getWriteVbo();
+
     // SDFテクスチャのバインド
     glActiveTexture(GL_TEXTURE4);
     glBindTexture(GL_TEXTURE_3D, obstacle.resource->sdfTexture3D);
@@ -129,7 +139,8 @@ void MpmSimulator::step(const SdfInstance& obstacle) {
     glUniform3fv(sdfCenterLoc, 1, glm::value_ptr(obstacle.position));
 
     // データバッファのバインド
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mpmObject.vbo);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, readVbo);  // 計算用の VBO をセット
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, writeVbo); // 結果用の VBO をセット
     glBindBufferBase(GL_UNIFORM_BUFFER, 1, physicsUbo);
 
     // グリッドの情報転送
@@ -160,10 +171,8 @@ void MpmSimulator::step(const SdfInstance& obstacle) {
     // [G2P] グリッドからパーティクルへ速度と変形勾配を書き戻し
     glUseProgram(mpmG2P);
     glDispatchCompute(particleGroups, 1, 1);
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
 
-    // [Move] パーティクルの最終位置を更新
-    glUseProgram(mpmMove);
-    glDispatchCompute(particleGroups, 1, 1);
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT |GL_BUFFER_UPDATE_BARRIER_BIT);   // SSBO書き換え待ち + 記録の控え作成準備(Timeline)
+    // ping-pongスワップ(ダブルバッファの切り替え) 
+    mpmObject.swapBuffers();
 }

@@ -22,9 +22,10 @@ private:
 
     int currentFrameCount; // 現在記録されている有効フレーム数
     int headIndex;         // 次に recordFrame() が書き込む物理インデックス(最新は headIndex - 1)
-
     int playbackFrame;     // UI等で扱う論理フレーム位置 (0 〜 currentFrameCount - 1)
 
+    GLuint recordProgram{ 0 };
+    GLint writeOffsetLoc{ -1 };
     GLuint historyVbo;                      // GPU 上での記録媒体
     std::vector<SdfSnapshot> sdfHistory;    // CPU 上での記録媒体
 
