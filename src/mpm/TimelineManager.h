@@ -6,7 +6,7 @@
 #include <GLM/gtc/quaternion.hpp>
 #include <vector>
 #include <cassert>
-#include "sdf/SdfInstance.h"
+#include "../sdf/SdfInstance.h"
 
 /// @brief MPMシミュレーションの状態を時系列で記録・復元するタイムライン管理クラス
 /// @note 物理フレーム : リングバッファにおける最新/最古とされる具体的な場所

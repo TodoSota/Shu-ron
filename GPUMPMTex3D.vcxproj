@@ -137,7 +137,7 @@
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="legacy\Object.cpp" />
     <ClCompile Include="src\core\Shader.cpp" />
-    <ClCompile Include="src\TimelineManager.cpp" />
+    <ClCompile Include="src\mpm\TimelineManager.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include=".gitattributes" />
@@ -175,7 +175,7 @@
     <ClInclude Include="src\core\Window.h" />
     <ClInclude Include="src\sdf\SdfInstance.h" />
     <ClInclude Include="src\tiny_obj_loader\tiny_obj_loader.h" />
-    <ClInclude Include="src\TimelineManager.h" />
+    <ClInclude Include="src\mpm\TimelineManager.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

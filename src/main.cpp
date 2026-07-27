@@ -1,12 +1,12 @@
 // Windowsの OpenGL ライブラリをリンクする
 #pragma comment(lib, "opengl32.lib")
 
-#include "TimelineManager.h"
 #include "core/Window.h"		// ウィンドウの生成から入力などの処理
 #include "core/Camera.h"		// 3D空間におけるカメラ位置
 #include "core/Errorcheck.h"	// OpenGL のエラーチェック
 #include "core/MeshResource.h"	// SDFに存在するオブジェクトのデータ
 #include "sdf/SdfInstance.h"	// SDFに登録するオブジェクト
+#include "mpm/TimelineManager.h"// MPM シミュレーションの履歴
 #include "mpm/MpmObject.h"		// MPM 用の描画データパッケージ
 #include "mpm/MpmSimulator.h"	// MPM のシミュレーション実行クラス
 #include "controller/InteractionController.h" // プレイヤー操作の処理
@@ -27,7 +27,10 @@
 
 // 粒子数
 const auto kParticleCount{ 10000 }; // ノートPCでやるには10000重いので
+// シミュレーション範囲
 const float kWorldScale = 1.5f;
+// 巻き戻し可能フレーム数
+const int maxFrames = 600;
 
 /// メインプログラム
 /// @return プログラムが正常終了した場合 0
@@ -168,7 +171,7 @@ auto main() -> int {
 	mpmSimulator.resetParticles(1.0f, false);
 	mpmSimulator.setPhysics(mpmSimParam);
 	// タイムラインマネージャーのインスタンス生成
-	TimelineManager timeline(300, kParticleCount, 1);
+	TimelineManager timeline(maxFrames, kParticleCount, 1);
 	// 画面描画クラスのインスタンス生成
 	Renderer renderer(kWorldScale);
 	// プレイヤー操作処理のインスタンス生成

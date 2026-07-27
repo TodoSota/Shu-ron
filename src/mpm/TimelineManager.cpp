@@ -1,6 +1,6 @@
 #include "TimelineManager.h"
-#include "core/Shader.h"
-#include "mpm/MpmObject.h"
+#include "../core/Shader.h"
+#include "../mpm/MpmObject.h"
 #include <GLFW/glfw3.h>
 
 // コンストラクタ

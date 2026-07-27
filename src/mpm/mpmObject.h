@@ -34,9 +34,9 @@ struct MpmParticle {
 /// 頂点配列オブジェクト
 struct MpmObject {
 
-	GLuint vao[2];		// vao:描画
-	GLuint vbo[2];		// vbo:粒子のデータ本体
-	int readBuffer{ 0 };		// 計算対象を表現するインデックス
+	GLuint vao[2];			// vao:描画
+	GLuint vbo[2];			// vbo:粒子のデータ本体
+	int readBuffer{ 0 };	// 計算対象を表現するインデックス
 
 	const GLsizei count;	// 頂点数
 
