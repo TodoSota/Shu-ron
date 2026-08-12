@@ -147,9 +147,11 @@
     <None Include="LICENSE" />
     <None Include="README.md" />
     <None Include="src\mpm\shaders\mpm_g2p.comp" />
+    <None Include="src\mpm\shaders\mpm_g2p_Linear.comp" />
     <None Include="src\mpm\shaders\mpm_grid.comp" />
     <None Include="src\mpm\shaders\mpm_move.comp" />
     <None Include="src\mpm\shaders\mpm_p2g.comp" />
+    <None Include="src\mpm\shaders\mpm_p2g_Linear.comp" />
     <None Include="src\mpm\shaders\mpm_setup.comp" />
     <None Include="packages.config" />
     <None Include="src\mpm\shaders\timeline_record.comp" />

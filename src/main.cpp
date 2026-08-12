@@ -26,7 +26,7 @@
 #include <GLM/gtc/matrix_transform.hpp>
 
 // 粒子数
-const auto kParticleCount{ 10000 }; // ノートPCでやるには10000重いので
+const auto kParticleCount{ 100000 }; // ノートPCでやるには10000重いので
 // シミュレーション範囲
 const float kWorldScale = 1.5f;
 // 巻き戻し可能フレーム数

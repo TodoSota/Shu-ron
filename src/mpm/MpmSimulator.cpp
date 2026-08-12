@@ -13,9 +13,9 @@ MpmSimulator::MpmSimulator(int particleCount, int gridSize, float worldScale)
 {
     // コンピュートシェーダーのロード
     mpmSetup = loadCompute("src/mpm/shaders/mpm_setup.comp");
-    mpmP2G = loadCompute("src/mpm/shaders/mpm_p2g.comp");
+    mpmP2G = loadCompute("src/mpm/shaders/mpm_p2g_Linear.comp");
     mpmGrid = loadCompute("src/mpm/shaders/mpm_grid.comp");
-    mpmG2P = loadCompute("src/mpm/shaders/mpm_g2p.comp");
+    mpmG2P = loadCompute("src/mpm/shaders/mpm_g2p_Linear.comp");
 
     if (mpmSetup == 0 || mpmP2G == 0 || mpmGrid == 0 || mpmG2P == 0) {
         std::cerr << "Error: Can not create MPM simulator compute shaders." << std::endl;

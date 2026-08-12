@@ -107,6 +107,8 @@
     <None Include=".gitignore" />
     <None Include=".gitattributes" />
     <None Include="src\mpm\shaders\timeline_record.comp" />
+    <None Include="src\mpm\shaders\mpm_p2g_Linear.comp" />
+    <None Include="src\mpm\shaders\mpm_g2p_Linear.comp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\core\Errorcheck.h">
