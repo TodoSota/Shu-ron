@@ -63,6 +63,9 @@
     <ClCompile Include="src\mpm\MpmSimulator.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
+    <ClCompile Include="src\mpm\TimelineManager.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
@@ -103,6 +106,9 @@
     <None Include="README.md" />
     <None Include=".gitignore" />
     <None Include=".gitattributes" />
+    <None Include="src\mpm\shaders\timeline_record.comp" />
+    <None Include="src\mpm\shaders\mpm_p2g_Linear.comp" />
+    <None Include="src\mpm\shaders\mpm_g2p_Linear.comp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\core\Errorcheck.h">
@@ -145,6 +151,9 @@
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
     <ClInclude Include="src\mpm\MpmSimulator.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mpm\TimelineManager.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
   </ItemGroup>

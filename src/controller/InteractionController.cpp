@@ -40,7 +40,12 @@ void InteractionController::handleShootMode(Window& window, const Camera& camera
         obstacle.position = camera.position + ray_dir * 0.5f;
         obstacle.velocity = ray_dir * 6.0f;
         obstacle.angularVelocity = glm::vec3(0.0f); // 弾丸モードは回転なし
-        obstacle.scale = glm::vec3(-0.2f);          // 等方スケール
+        obstacle.scale = glm::vec3(0.2f);          // 等方スケール
+
+        // Shoot操作の記録
+        lastAction = LastActionType::Shoot;
+        lastShootPos = obstacle.position;
+        lastShootVel = obstacle.velocity;
     }
 }
 
@@ -74,14 +79,20 @@ void InteractionController::handleSwingMode(Window& window, const Camera& camera
             swingAxis = glm::normalize(glm::vec3(invView[0]));
 
             // スイングの初期姿勢
-            obstacle.scale = glm::vec3(-0.06f, -0.4f, -0.06f);
+            obstacle.scale = glm::vec3(0.06f, 0.4f, 0.06f);
 
         }
         else if (currentState == GLFW_RELEASE && swingState == SwingState::Dragging) {
             // ドラッグ終了 -> 発動
             swingState = SwingState::Swinging;
             swingCurrentTime = 0.0f;
-            obstacle.scale = glm::vec3(-0.06f, -0.4f, -0.06f);
+            obstacle.scale = glm::vec3(0.06f, 0.4f, 0.06f);
+
+            // Swing操作の記録
+            lastAction = LastActionType::Swing;
+            lastSwingPivot = swingPivot;
+            lastSwingAxis = swingAxis;
+            lastSwingMaxAngle = swingMaxAngle;
         }
 
         // ドラッグ中のリアルタイム計算
@@ -170,4 +181,30 @@ std::vector<glm::vec3> InteractionController::calcPreviewPoints(const SdfInstanc
     previewPoints.push_back(swingPivot + glm::vec3(0, 0, d));
 
     return previewPoints;
+}
+
+// 自動発火メソッドの実装
+void InteractionController::fireLastAction(SdfInstance& obstacle) {
+    // 最後のアクションに応じてobstacleのステータスを変更
+    if (lastAction == LastActionType::Shoot) {
+        // 記録されたパラメータでShootを再現
+        obstacle.position = lastShootPos;
+        obstacle.velocity = lastShootVel;
+        obstacle.angularVelocity = glm::vec3(0.0f);
+        obstacle.scale = glm::vec3(0.2f);
+
+        // Shootは一瞬の速度付与のみなので状態遷移は不要
+        swingState = SwingState::None;
+    }
+    else if (lastAction == LastActionType::Swing) {
+        // 記録されたパラメータをコントローラーの現在の制御変数に復元
+        swingPivot = lastSwingPivot;
+        swingAxis = lastSwingAxis;
+        swingMaxAngle = lastSwingMaxAngle;
+
+        // Swingのキネマティクス再生状態へ強制遷移
+        swingState = SwingState::Swinging;
+        swingCurrentTime = 0.0f;
+        obstacle.scale = glm::vec3(0.06f, 0.4f, 0.06f);
+    }
 }

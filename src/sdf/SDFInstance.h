@@ -8,6 +8,15 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include <GLM/gtx/quaternion.hpp>
 
+// SDFの状態を表現した構造体
+struct SdfSnapshot {
+    glm::vec3 position;
+    glm::vec3 velocity;
+    glm::quat rotation;
+    glm::vec3 angularVelocity;
+    glm::vec3 scale;
+};
+
 class SdfInstance {
 public:
     // リソースデータへのポインタ（複数インスタンスで同じリソースを共有）
@@ -29,6 +38,22 @@ public:
     /// コンストラクタ
     /// @param[in] res 空間内に存在するオブジェクトインスタンス
     SdfInstance(std::shared_ptr<MeshResource> res) : resource(res) {}
+
+    /// 現在の状態をスナップショットとして抽出
+    SdfSnapshot captureSnapshot() const {
+        return { position, velocity, rotation, angularVelocity, scale };
+    }
+
+    /// スナップショットから状態を復元し、行列を再計算する
+    void restoreSnapshot(const SdfSnapshot& snap) {
+        position = snap.position;
+        velocity = snap.velocity;
+        rotation = snap.rotation;
+        angularVelocity = snap.angularVelocity;
+        scale = snap.scale;
+
+        updateMatrices();
+    }
 
     /// オブジェクトの時間更新
     /// param[in] dt タイムステップ

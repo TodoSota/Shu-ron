@@ -21,6 +21,13 @@ enum class SwingState {
     Swinging
 };
 
+// 記録用のアクションタイプ
+enum class LastActionType {
+    None,
+    Shoot,
+    Swing
+};
+
 class InteractionController {
 private:
     // --- モード管理 ---
@@ -43,6 +50,18 @@ private:
     float swingSpeedMult{ 6.0f };
     float maxPixelDrag{ 300.0f }; // 最大威力に必要なドラッグ量
     float pivotDepth{ 1.0f };     // 支点の奥行き(カメラから)
+
+    // 記録用パラメータ
+    LastActionType lastAction{ LastActionType::None };
+
+    // Shootの記録データ
+    glm::vec3 lastShootPos{ 0.0f };
+    glm::vec3 lastShootVel{ 0.0f };
+
+    // Swingの記録データ
+    glm::vec3 lastSwingPivot{ 0.0f };
+    glm::vec3 lastSwingAxis{ 1.0f, 0.0f, 0.0f };
+    float lastSwingMaxAngle{ 0.0f };
 
     // --- 内部処理メソッド ---
 
@@ -75,4 +94,11 @@ public:
     /// Renderer に渡すプレビュー用の頂点データを生成(計算)して返す
     /// @param[in] obstacle スイングの主体となる物体のデータ
     std::vector<glm::vec3> calcPreviewPoints(const SdfInstance& obstacle) const;
+
+    /// 最後に実行したアクションを再発火
+    /// @param[in] obstacle パラメータを適用するSDFオブジェクト
+    void fireLastAction(SdfInstance& obstacle);
+
+    /// 再生可能なログがあるか確認
+    bool hasLastAction() const { return lastAction != LastActionType::None; }
 };

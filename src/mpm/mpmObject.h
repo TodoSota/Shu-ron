@@ -34,8 +34,10 @@ struct MpmParticle {
 /// 頂点配列オブジェクト
 struct MpmObject {
 
-	const GLuint vao;		// vao:描画
-	const GLuint vbo;		// vbo:粒子のデータ本体
+	GLuint vao[2];			// vao:描画
+	GLuint vbo[2];			// vbo:粒子のデータ本体
+	int readBuffer{ 0 };	// 計算対象を表現するインデックス
+
 	const GLsizei count;	// 頂点数
 
 	// MPMグリッドのフィールド
@@ -48,7 +50,15 @@ struct MpmObject {
 	MpmObject(GLsizei count, int gridSize);
 
 	MpmObject(const MpmObject& MpmObject) = delete;					// コピーコンストラクタを禁止
-	virtual ~MpmObject();											// デコンストラクタ
+	virtual ~MpmObject();											// デストラクタ
 	MpmObject& operator = (const MpmObject& MpmObject) = delete;	// 代入演算子は使用しない
 	MpmObject& operator=(MpmObject&& MpmObject) = default;			// ムーブ代入演算子はデフォルトを使用
+
+	// ゲッター
+	GLuint getReadVbo() const { return vbo[readBuffer]; }
+	GLuint getWriteVbo() const { return vbo[1 - readBuffer]; }
+	GLuint getRenderVao() const { return vao[readBuffer]; }
+
+	/// @brief ダブルバッファのターゲットを切り替える
+	void swapBuffers() { readBuffer = 1 - readBuffer; }
 };

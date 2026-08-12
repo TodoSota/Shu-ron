@@ -159,14 +159,13 @@ void main() {
 	mat3 C = mat3(p[idx].affineC);
 
 	vec3 fx = x * inv_dx;
-	ivec3 base = ivec3(floor(fx - 0.5));	// floor(x) : x以下の最大の整数にする
+	ivec3 base = ivec3(floor(fx));	// floor(x) : x以下の最大の整数にする
 	vec3 weight_dist = fx - vec3(base);
 
 	// 2次Bスプライン補間
-	vec3 w[3];
-	w[0] = 0.5 * pow( 1.5 - weight_dist, vec3(2.0));
-	w[1] = 0.75 - pow( weight_dist - 1.0, vec3(2.0));
-	w[2] = 0.5 * pow( weight_dist - 0.5, vec3(2.0));
+	vec3 w[2];
+	w[0] = 1.0 - weight_dist;
+	w[1] = weight_dist;
 
 	// 応力の計算 SVD(特異値分解)
 	mat3 U, sig, V;
@@ -186,9 +185,9 @@ void main() {
 
 	// グリッドへ転送
 	mat3 affine = p_mass * C; // MLS_MPM
-	for (int i=0; i<3; i++) {
-		for (int j=0; j<3; j++) {
-			for (int k=0; k<3; k++) {
+	for (int i=0; i<2; i++) {
+		for (int j=0; j<2; j++) {
+			for (int k=0; k<2; k++) {
 				ivec3 offset = ivec3(i, j, k);
 				ivec3 node_coords = base + offset;	// 今回の書き込み先
 				if (any(lessThan(node_coords, ivec3(0))) || any(greaterThanEqual(node_coords, imageSize(gridIMX)))) {

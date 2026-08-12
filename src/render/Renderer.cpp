@@ -134,7 +134,7 @@ void Renderer::drawMpm(const MpmObject& MpmObject, const glm::mat4& view, const 
     glUniform1i(isFloorLoc, 0); // 地面フラグOFF
     glUniform1i(useDebugColorLoc, useDebugColor ? 1 : 0);
 
-    glBindVertexArray(MpmObject.vao);
+    glBindVertexArray(MpmObject.getRenderVao());
     glDrawArrays(GL_POINTS, 0, MpmObject.count);
     glBindVertexArray(0);
 }

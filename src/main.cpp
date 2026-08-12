@@ -6,6 +6,7 @@
 #include "core/Errorcheck.h"	// OpenGL のエラーチェック
 #include "core/MeshResource.h"	// SDFに存在するオブジェクトのデータ
 #include "sdf/SdfInstance.h"	// SDFに登録するオブジェクト
+#include "mpm/TimelineManager.h"// MPM シミュレーションの履歴
 #include "mpm/MpmObject.h"		// MPM 用の描画データパッケージ
 #include "mpm/MpmSimulator.h"	// MPM のシミュレーション実行クラス
 #include "controller/InteractionController.h" // プレイヤー操作の処理
@@ -25,8 +26,11 @@
 #include <GLM/gtc/matrix_transform.hpp>
 
 // 粒子数
-const auto kParticleCount{ 10000 }; // ノートPCでやるには10000重いので
-const float kWorldScale = 0.67f;
+const auto kParticleCount{ 100000 }; // ノートPCでやるには10000重いので
+// シミュレーション範囲
+const float kWorldScale = 1.5f;
+// 巻き戻し可能フレーム数
+const int maxFrames = 600;
 
 /// メインプログラム
 /// @return プログラムが正常終了した場合 0
@@ -111,7 +115,7 @@ auto main() -> int {
 	// インスタンスを作成
 	SdfInstance obstacle(sdfResource);
 	obstacle.position = glm::vec3(0.5f, 0.3f, 0.5f);
-	obstacle.scale = glm::vec3(-0.2f);
+	obstacle.scale = glm::vec3(0.2f);
 	obstacle.updateMatrices();
 
 	// 各種材料の特性値とシミュレーションの設定
@@ -149,6 +153,16 @@ auto main() -> int {
 	// 背景色指定
 	glClearColor(0.8f, 0.8f, 0.8f, 1.0f);
 
+	// デプステスト（前後関係の計算）を有効化
+	glEnable(GL_DEPTH_TEST);
+
+	// カリング（裏面の描画省略）を有効化（影の計算がおかしくなる対策）
+	glEnable(GL_CULL_FACE);
+	glCullFace(GL_BACK); // 裏面は描画しない
+
+	glPointSize(static_cast<GLfloat>(window.getSize().y * 0.01));
+	glEnable(GL_POINT_SMOOTH);
+
 	glPointSize(static_cast<GLfloat>(window.getSize().y * 0.01));
 	glEnable(GL_POINT_SMOOTH);
 
@@ -156,12 +170,21 @@ auto main() -> int {
 	MpmSimulator mpmSimulator(kParticleCount, kGrid, kWorldScale);
 	mpmSimulator.resetParticles(1.0f, false);
 	mpmSimulator.setPhysics(mpmSimParam);
+	// タイムラインマネージャーのインスタンス生成
+	TimelineManager timeline(maxFrames, kParticleCount, 1);
 	// 画面描画クラスのインスタンス生成
 	Renderer renderer(kWorldScale);
 	// プレイヤー操作処理のインスタンス生成
 	InteractionController controller;
 	// 描画空間におけるカメラ生成
 	Camera camera;
+
+	// タイムライン制御用のフラグ
+	bool isPaused{ false };
+	bool stepFrame{ false };
+
+	// サブステップ
+	int subSteps = 1;
 
 	// ウィンドウ起動中
 	while (window) {
@@ -184,22 +207,37 @@ auto main() -> int {
 		glm::mat4 view = camera.getView();// ビュー変換行列を設定・カメラの現在位置を取得
 		glm::mat4 projection = camera.getProjection(window.getAspect());// 投影変換行列を設定
 
+		// ポーズかコマ送りの場合タイムステップを停止
+		float currentDt = (isPaused && !stepFrame) ? 0.0f : mpmSimParam.timestep;
 
-		// 入力とカメラ更新
-		controller.update(window, camera, obstacle, mpmSimParam.timestep);
+		if (!isPaused || stepFrame) {
+			// サブステップ
+			for (int i = 0; i < subSteps; i++) {
+				// 入力とカメラ更新
+				controller.update(window, camera, obstacle, currentDt);
 
-		// SDF(障害物) の更新
-		obstacle.update(mpmSimParam.timestep);
+				// SDF(障害物) の更新
+				obstacle.update(currentDt);
 
-		// 値の共有と物理計算の進行
-		mpmSimulator.setPhysics(mpmSimParam);
-		mpmSimulator.step(obstacle);		// *** 計算の主体 ***
+				// 値の共有と物理計算の進行
+				mpmSimulator.setPhysics(mpmSimParam);
+				mpmSimulator.step(obstacle);		// *** 計算の主体 ***
+			}
+			// コマ送り要求完了のためリセット
+			stepFrame = false;
+			// シミュレーション状況をタイムラインへ記録
+			timeline.recordFrame(mpmSimulator.getReadVbo(), &obstacle);
+		}
+		else {
+			// 一時停止中もプレビューなどは更新する
+			controller.update(window, camera, obstacle, currentDt);
+		}
 
 		// 画面の描画
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);// ウィンドウを消去(カラー/デプスバッファを初期状態に)
 		renderer.drawFloor(view,projection,model,mpmSimParam);
-		renderer.drawMpm(mpmSimulator.getMpmObject(), view, projection, model, window.getUseDebugColor());
 		renderer.drawObstacle(obstacle,view,projection,model);
+		renderer.drawMpm(mpmSimulator.getMpmObject(), view, projection, model, window.getUseDebugColor());
 		renderer.drawBoundary(view,projection,glm::mat4(1.0f));
 
 		// Swing モードのプレビュー描画
@@ -254,13 +292,81 @@ auto main() -> int {
 		}
 		ImGui::Separator(); // 区切り線
 
+		ImGui::Text("Timeline Control:");
 
+		// 再生 / 一時停止のトグルボタン
+		if (ImGui::Button(isPaused ? "▶ Play" : "■ Pause")) {
+			isPaused = !isPaused;
+		}
+		ImGui::SameLine();
 
-		// 「リスタート」ボタン
+		// コマ送りボタン（一時停止中のみ押せるように制御）
+		if (!isPaused) {
+			ImGui::BeginDisabled(); // 稼働中はグレーアウト
+		}
+		ImGui::PushButtonRepeat(true);	// 長押しでリピート可能
+		if (ImGui::Button("▶▶ Step Forward (1 Frame)")) {
+			stepFrame = true;
+		}
+		ImGui::PopButtonRepeat();		// 長押しリピート設定解除
+		if (!isPaused) {
+			ImGui::EndDisabled();
+		}
+
+		ImGui::Spacing();
+
+		// 再生中はスライダーをグレーアウトして操作不能にする
+		if (!isPaused) {
+			ImGui::BeginDisabled();
+		}
+
+		// 1フレームあたり1〜32ステップの範囲で調整可能
+		ImGui::SliderInt("Sub-steps", &subSteps, 1, 32);
+		if (ImGui::IsItemHovered()) {
+			ImGui::SetTooltip("Number of physics calculations per frame (16 is roughly the actual speed)");
+		}
+
+		if (!isPaused) {
+			ImGui::EndDisabled();
+		}
+
+		ImGui::Separator(); // 区切り線
+
+		// 操作記録の再実行ボタン
+		ImGui::Separator();
+		ImGui::Text("Action Macro:");
+
+		// 記録がない場合はボタンを無効化する
+		if (!controller.hasLastAction()) {
+			ImGui::BeginDisabled();
+		}
+		if (ImGui::Button("Repeat Last Action")) {
+			// 最後に実行したShoot or Swingをもう一度走らせる
+			controller.fireLastAction(obstacle);
+		}
+		if (!controller.hasLastAction()) {
+			ImGui::EndDisabled();
+		}
+		ImGui::Separator();
+
+		// タイムラインシークバー
+		ImGui::Spacing();
+		int maxFrameIndex = timeline.getCurrentFrameCount() > 0 ? timeline.getCurrentFrameCount() - 1 : 0;
+		int currentPlaybackFrame = timeline.getPlaybackFrame();
+
+		// スライダーを操作したとき
+		if (ImGui::SliderInt("Timeline (Frames)", &currentPlaybackFrame, 0, maxFrameIndex)) {
+			// 強制的にPauseにする
+			isPaused = true;
+			timeline.setPlaybackFrame(currentPlaybackFrame);
+
+			// 指定した論理フレームの状態をGPU/CPUに復元
+			timeline.restoreToFrame(currentPlaybackFrame, mpmSimulator.getMpmObject().getReadVbo(), &obstacle);
+		}
+
+		// リスタート
 		if (ImGui::Button("Restart Simulation")) {
-			// パーティクルの初期化を呼ぶ
-			mpmSimulator.resetParticles(1.0f,false);
-
+			mpmSimulator.resetParticles(1.0f, false);
 			mpmSimulator.setPhysics(mpmSimParam);
 		}
 
