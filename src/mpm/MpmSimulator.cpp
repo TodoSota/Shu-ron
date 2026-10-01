@@ -6,16 +6,29 @@
 #include <random>
 #include <GLM/gtc/type_ptr.hpp>
 
-// --- コンストラクタ・デストラクタ ---
-
-MpmSimulator::MpmSimulator(int particleCount, int gridSize, float worldScale)
-    : mpmObject(particleCount, gridSize), worldScale(worldScale)
+/// コンストラクタ
+/// @param[in] particleCount 粒子の数
+/// @param[in] gridSize グリッドの解像度
+/// @param[in] useLinear 補間方式において Linear を用いるのか
+MpmSimulator::MpmSimulator(int particleCount, int gridSize, float worldScale, bool useLinear)
+    : mpmObject(particleCount, gridSize), worldScale(worldScale), evaluator()
 {
     // コンピュートシェーダーのロード
     mpmSetup = loadCompute("src/mpm/shaders/mpm_setup.comp");
-    mpmP2G = loadCompute("src/mpm/shaders/mpm_p2g_Linear.comp");
     mpmGrid = loadCompute("src/mpm/shaders/mpm_grid.comp");
-    mpmG2P = loadCompute("src/mpm/shaders/mpm_g2p_Linear.comp");
+    // 指定の補間方法のファイルを選択
+    if (!useLinear) {
+        // 通常
+        mpmP2G = loadCompute("src/mpm/shaders/mpm_p2g.comp");
+        mpmG2P = loadCompute("src/mpm/shaders/mpm_g2p.comp");
+        std::cout << "Loaded MPM Shaders: Cubic B-Spline Interpolation" << std::endl;
+    }
+    else {
+        // Linear
+        mpmP2G = loadCompute("src/mpm/shaders/mpm_p2g_Linear.comp");
+        mpmG2P = loadCompute("src/mpm/shaders/mpm_g2p_Linear.comp");
+        std::cout << "Loaded MPM Shaders: Linear Interpolation" << std::endl;
+    }
 
     if (mpmSetup == 0 || mpmP2G == 0 || mpmGrid == 0 || mpmG2P == 0) {
         std::cerr << "Error: Can not create MPM simulator compute shaders." << std::endl;
@@ -35,8 +48,22 @@ MpmSimulator::MpmSimulator(int particleCount, int gridSize, float worldScale)
     glBindBuffer(GL_UNIFORM_BUFFER, physicsUbo);
     glBufferData(GL_UNIFORM_BUFFER, sizeof(MpmPhysics), nullptr, GL_DYNAMIC_DRAW);
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
-}
 
+    // 評価クラスでの評価機能初期設定 : 全てOFF
+    EvaluatorOptions initOptions;
+    initOptions.enableGpuTimer = false;
+    initOptions.enableGpuTimerReadback = false;
+    initOptions.enableStateEvaluation = false;
+    initOptions.enableStateReadback = false;
+    initOptions.enableRepParticleReadback = false;
+    initOptions.enableFpsLogging = false;
+    initOptions.stateEvaluationInterval = 10;
+    evaluator.setOptions(initOptions);
+
+    // --- 評価機能における代表粒子選択 ---
+    if (particleCount > 0) evaluator.addRepresentativeParticle(0);     // 中心付近の粒子など
+    if (particleCount > 500)evaluator.addRepresentativeParticle(500);  // 別の場所の粒子など
+}
 MpmSimulator::~MpmSimulator() {
     glDeleteProgram(mpmSetup);
     glDeleteProgram(mpmP2G);
@@ -48,8 +75,9 @@ MpmSimulator::~MpmSimulator() {
 // --- 初期化・設定 ---
 
 void MpmSimulator::resetParticles(float scale, bool sphere) {
-    std::random_device seed_gen;
-    std::mt19937 engine(seed_gen());
+    //std::random_device seed_gen;
+    //std::mt19937 engine(seed_gen());
+    std::mt19937 engine(0); // 評価のため固定シードを使用
 
     // 0番の方のvboをバインドし頂点データをマップ
     glBindBuffer(GL_ARRAY_BUFFER, mpmObject.vbo[0]);
@@ -57,8 +85,12 @@ void MpmSimulator::resetParticles(float scale, bool sphere) {
     const auto position = static_cast<MpmParticle*>(glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY));
 
     // 粒子のランダム生成位置
+    const float center = static_cast<float>(worldScale * 0.5);
+    const float halfExtent = static_cast<float>(worldScale * 0.1 * scale);
+
     std::uniform_real_distribution<GLfloat> dist(-1.0f, 1.0f);
-    std::uniform_real_distribution<GLfloat> distCube(0.4f * scale, 0.6f * scale);
+    // 立方体生成の際には worldScale を加味した、世界の中心に粒子を生成
+    std::uniform_real_distribution<GLfloat> distCube(center - halfExtent, center + halfExtent);
     // 粒子のランダム色変更
     std::uniform_real_distribution<GLfloat> matDist(0.0f, 1.0f);
 
@@ -84,7 +116,7 @@ void MpmSimulator::resetParticles(float scale, bool sphere) {
         position[i].alpha = 0.267765f;
         position[i].q = 0.0f;
         position[i].vc = 0.0f;
-        position[i].state = 1;
+        position[i].state = 1.0f;
         position[i].scale = worldScale;
 
 
@@ -104,6 +136,10 @@ void MpmSimulator::resetParticles(float scale, bool sphere) {
     glBindBuffer(GL_COPY_READ_BUFFER, 0);
     glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    // シミュレーションステップ数/ログをリセット
+    stepCount = 0;
+    evaluator.clearLogs();
 }
 
 /// 物理パラメータ(UBO)をGPUに転送・更新する
@@ -149,30 +185,43 @@ void MpmSimulator::step(const SdfInstance& obstacle) {
     glBindImageTexture(2, mpmObject.gridTexZ, 0, GL_TRUE, 0, GL_READ_WRITE, GL_R32UI);
     glBindImageTexture(3, mpmObject.gridTexA, 0, GL_TRUE, 0, GL_READ_WRITE, GL_R32UI);
 
-    // 4. コンピュートシェーダーの連続ディスパッチ
+    // コンピュートシェーダーの連続ディスパッチ
     int numGroups = (mpmObject.gridSize + 7) / 8; // compファイルでの local_size が 8*8*8 なので 解像度/8 で送信
     int particleGroups = (mpmObject.count + 63) / 64; // こちらも同様。パーティクル数用のグループ数
 
     // [Setup] グリッドのリセット
     glUseProgram(mpmSetup);
+    evaluator.beginTimer("Setup");
     glDispatchCompute(numGroups, numGroups, numGroups);
+    evaluator.endTimer("Setup");
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
     // [P2G] パーティクルからグリッドへ物理量を転送
     glUseProgram(mpmP2G);
+    evaluator.beginTimer("P2G");
     glDispatchCompute(particleGroups, 1, 1);
+    evaluator.endTimer("P2G");
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
     // [Grid] グリッド上での力学計算と境界(SDF)処理
     glUseProgram(mpmGrid);
+    evaluator.beginTimer("Grid");
     glDispatchCompute(numGroups, numGroups, numGroups);
+    evaluator.endTimer("Grid");
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
     // [G2P] グリッドからパーティクルへ速度と変形勾配を書き戻し
     glUseProgram(mpmG2P);
+    evaluator.beginTimer("G2P");
     glDispatchCompute(particleGroups, 1, 1);
+    evaluator.endTimer("G2P");
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
 
     // ping-pongスワップ(ダブルバッファの切り替え) 
     mpmObject.swapBuffers();
+    
+    // シミュレーション評価実行
+    stepCount++;    // シミュレーション評価のステップを進める
+    evaluator.evaluateStep(writeVbo, mpmObject.count, stepCount);
+    
 }

@@ -5,6 +5,7 @@
 
 #include "MpmObject.h"  // グリッドや粒子の情報
 #include "MpmPhysics.h" // MPMの粒子群の物理パラメータ
+#include "MpmEvaluator.h"// シミュレーションの評価用
 
 // 前方宣言
 class SdfInstance;
@@ -20,11 +21,13 @@ private:
 
     // --- シミュレーションのコアデータ ---
     MpmObject mpmObject;
+    MpmEvaluator evaluator;
 
-    // --- UBO (Uniform Buffer Object) ---
-    GLuint physicsUbo{ 0 };
+    // --- 内部状態 ---
+    int stepCount{ 0 };
 
     // --- Uniform ロケーションのキャッシュ ---
+    GLuint physicsUbo{ 0 }; // UBO
     GLint sdfModelLoc{ -1 };
     GLint sdfInvModelLoc{ -1 };
     GLint sdfVelocityLoc{ -1 };
@@ -34,13 +37,14 @@ private:
     GLint sdfCenterLoc{ -1 };
 
     // --- コンストラクタで受け取ったシミュレーションステータス ---
-    float worldScale{ 1.0f };
+    float worldScale{ 1.0f };   // シミュレーション範囲の縮尺 (初期 0 ～ 1)
 
 public:
     /// コンストラクタ
     /// @param[in] particleCount 粒子の数
     /// @param[in] gridSize グリッドの解像度
-    MpmSimulator(int particleCount, int gridSize, float worldScale);
+    /// @param[in] useLinear 補間方式において Linear を用いるのか
+    MpmSimulator(int particleCount, int gridSize, float worldScale, bool useLinear);
 
     /// デストラクタ
     ~MpmSimulator();
@@ -56,6 +60,9 @@ public:
     GLuint getReadVbo() const { return MpmSimulator::getMpmObject().getReadVbo(); }
     GLuint getWriteVbo() const { return MpmSimulator::getMpmObject().getWriteVbo(); }
     GLuint getReadBuffer() const { return MpmSimulator::getMpmObject().readBuffer; }
+
+    MpmEvaluator& getEvaluator() { return MpmSimulator::evaluator; }
+    int getStepCount() const { return stepCount; }
 
     // --- 初期化・設定 
 

@@ -1,0 +1,81 @@
+#version 430 core
+
+layout(local_size_x = 64) in;
+
+// 粒子のデータ構造
+struct mpmParticle {
+	vec4 position;		// 位置
+	vec4 velocity;		// 速度 + padding
+	mat4 affineC;		//アフィン速度行列 (mat3 分のみ値あり)
+	mat4 deformation;	// 変形勾配 (mat3 分のみ値あり)
+
+	// 砂の塑性変形パラメーター
+    float alpha;		//降伏面の大きさ
+    float q;			//硬化状態
+    float vc;			//変化の際の体積変化
+    int state;			//状態(変化)
+    int scale;			//スケール
+    int padding[3];		//調整
+};
+
+// 読み取り専用の粒子バッファ
+layout(std430, binding = 0) readonly buffer ParticleIn {
+    mpmParticle particles[];
+};
+
+// 評価結果書き込み用バッファ
+layout(std430, binding = 1) buffer EvalResult {
+    uint validParticleCount;      // 評価可能な正常粒子数(位置/速度が指定範囲内)
+    uint nanPositionCount;
+    uint nanVelocityCount;
+    uint oobCount;                // oob : Out of Bounds
+    uint maxVelocityBits_GPU;     // GPU 内での速度表現
+
+    // AABB用（スケール済み） : 固定小数点スケール
+    int minPosX, minPosY, minPosZ;
+    int maxPosX, maxPosY, maxPosZ;
+
+    uint padding[3];
+} result;
+
+const float SCALE = 100.0;
+const int INIT_MAX = 2147483647;  // intの最大値
+const int INIT_MIN = -2147483647; // intの最小値
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= particles.length()) return;
+
+    vec3 pos = particles[idx].position.xyz;
+    vec3 vel = particles[idx].velocity.xyz;
+    float velNorm = length(vel);
+
+    // 異常値チェック
+    bool posInvalid = isnan(pos.x) || isinf(pos.x) || isnan(pos.y) || isinf(pos.y) || isnan(pos.z) || isinf(pos.z);
+
+    bool velInvalid = isnan(vel.x) || isinf(vel.x) || isnan(vel.y) || isinf(vel.y) || isnan(vel.z) || isinf(vel.z);
+
+    if (posInvalid) atomicAdd(result.nanPositionCount, 1);
+    if (velInvalid) atomicAdd(result.nanVelocityCount, 1);
+
+    // シミュレーション空間（0.0 ~ 1.5 等）に合わせた緩い境界チェック
+    bool isOob = (pos.x < -10.0 || pos.x > 10.0 || pos.y < -10.0 || pos.y > 10.0 || pos.z < -10.0 || pos.z > 10.0);
+    if (isOob) atomicAdd(result.oobCount, 1);
+
+    // 正常な粒子のみで統計を計算
+    if (!posInvalid && !velInvalid && !isOob) {
+        atomicAdd(result.validParticleCount, 1);
+        atomicMax(result.maxVelocityBits_GPU, floatBitsToUint(velNorm));
+
+        ivec3 scaledPos = ivec3(pos * SCALE);
+
+        // AABBの計算
+        atomicMin(result.minPosX, scaledPos.x);
+        atomicMin(result.minPosY, scaledPos.y);
+        atomicMin(result.minPosZ, scaledPos.z);
+
+        atomicMax(result.maxPosX, scaledPos.x);
+        atomicMax(result.maxPosY, scaledPos.y);
+        atomicMax(result.maxPosZ, scaledPos.z);
+    }
+}

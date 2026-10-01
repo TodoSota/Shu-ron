@@ -3,9 +3,6 @@
 #include <GLM/gtc/matrix_transform.hpp>
 #include <memory>
 #include "../core/MeshResource.h"
-
-// 実験機能なので使う宣言
-#define GLM_ENABLE_EXPERIMENTAL
 #include <GLM/gtx/quaternion.hpp>
 
 // SDFの状態を表現した構造体

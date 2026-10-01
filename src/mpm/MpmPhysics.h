@@ -27,6 +27,6 @@ struct MpmPhysics {
 	alignas(4) GLfloat p_padding;		// 調整
 
 	// 障害物
-	alignas(16) glm::vec4 obstacle_sphere; // 静的物体の仮説
-	alignas(16) glm::vec4 obstacle_velocity; // 静的物体の仮説
+	alignas(16) glm::vec4 obstacle_sphere; // 静的物体の仮設
+	alignas(16) glm::vec4 obstacle_velocity; // 静的物体の仮設
 };
