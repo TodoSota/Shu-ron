@@ -1,6 +1,4 @@
 #pragma once
-#define _USE_MATH_DEFINES	//M_PIなどを使用可能に
-#define GLM_FORCE_RADIANS	//GLMの角度を度の単位でなくラジアンの単位に(もともと暗黙的で紛らわしいらしい)
 #include <GL/glew.h>
 #include <GLM/glm.hpp>
 #include <GLM/gtc/quaternion.hpp>

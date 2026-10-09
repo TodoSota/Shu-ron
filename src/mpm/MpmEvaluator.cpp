@@ -200,57 +200,66 @@ void MpmEvaluator::evaluateStep(GLuint particleVbo, int particleCount, int stepC
 /// @param [in] detailFilepath 詳細の書き出し先
 /// @param [in] fpsFilepath    速度の書き出し先
 void MpmEvaluator::saveLogToCSV(const std::string& perfFilepath, const std::string& detailFilepath, const std::string& fpsFilepath) const {
+    std::cout << "Evaluation logs saved to ";
+
     // パフォーマンスログ出力
-    std::ofstream perfFile(perfFilepath);
-    if (perfFile.is_open()) {
-        perfFile << "Frame,Setup(ms),P2G(ms),Grid(ms),G2P(ms),ComputeTotal(ms)\n";
-        for (const auto& p : perfLogs) {
-            perfFile << p.stepFrame << "," << p.timeSetup << "," << p.timeP2G << ","
-                << p.timeGrid << "," << p.timeG2P << "," << p.timeComputeTotal << "\n";
+    if (options.enableGpuTimerReadback) {
+        std::ofstream perfFile(perfFilepath);
+        if (perfFile.is_open()) {
+            perfFile << "Frame,Setup(ms),P2G(ms),Grid(ms),G2P(ms),ComputeTotal(ms)\n";
+            for (const auto& p : perfLogs) {
+                perfFile << p.stepFrame << "," << p.timeSetup << "," << p.timeP2G << ","
+                    << p.timeGrid << "," << p.timeG2P << "," << p.timeComputeTotal << "\n";
+            }
         }
+        std::cout << perfFilepath << " , ";
     }
 
     // 詳細ログ出力
-    std::ofstream detailFile(detailFilepath);
-    if (detailFile.is_open()) {
-        // ヘッダー作成
-        detailFile << "StepFrame,TotalCount,ValidCount,AliveRatio,NaN_Pos,NaN_Vel,OOB,MaxVel,"
-            << "ExtentX,ExtentY,ExtentZ,"
-            << "AABB_MinX,AABB_MinY,AABB_MinZ,AABB_MaxX,AABB_MaxY,AABB_MaxZ";
+    if (options.enableStateReadback) {
+        std::ofstream detailFile(detailFilepath);
+        if (detailFile.is_open()) {
+            // ヘッダー作成
+            detailFile << "StepFrame,TotalCount,ValidCount,AliveRatio,NaN_Pos,NaN_Vel,OOB,MaxVel,"
+                << "ExtentX,ExtentY,ExtentZ,"
+                << "AABB_MinX,AABB_MinY,AABB_MinZ,AABB_MaxX,AABB_MaxY,AABB_MaxZ";
 
-        for (size_t i = 0; i < repParticleIndices.size(); i++) {
-            std::string prefix = ",Rep" + std::to_string(repParticleIndices[i]) + "_";
-            detailFile << prefix << "PosX" << prefix << "PosY" << prefix << "PosZ"
-                << prefix << "Vel" << prefix << "State" << prefix << "Q";
-        }
-        detailFile << "\n";
-
-        // データ書き込み
-        for (const auto& d : detailLogs) {
-            detailFile << d.stepFrame << "," << d.totalParticleCount << "," << d.validCount << "," << d.aliveRatio << ","
-                << d.nanPosCount << "," << d.nanVelCount << "," << d.oobCount << "," << d.maxVelocity << ","
-                << d.aabbExtent.x << "," << d.aabbExtent.y << "," << d.aabbExtent.z << ","
-                << d.aabbMin.x << "," << d.aabbMin.y << "," << d.aabbMin.z << ","
-                << d.aabbMax.x << "," << d.aabbMax.y << "," << d.aabbMax.z;
-
-            for (const auto& rep : d.repParticles) {
-                detailFile << "," << rep.position.x << "," << rep.position.y << "," << rep.position.z
-                    << "," << rep.velocityNorm << "," << rep.state << "," << rep.deltaQ;
+            for (size_t i = 0; i < repParticleIndices.size(); i++) {
+                std::string prefix = ",Rep" + std::to_string(repParticleIndices[i]) + "_";
+                detailFile << prefix << "PosX" << prefix << "PosY" << prefix << "PosZ"
+                    << prefix << "Vel" << prefix << "State" << prefix << "Q";
             }
             detailFile << "\n";
+
+            // データ書き込み
+            for (const auto& d : detailLogs) {
+                detailFile << d.stepFrame << "," << d.totalParticleCount << "," << d.validCount << "," << d.aliveRatio << ","
+                    << d.nanPosCount << "," << d.nanVelCount << "," << d.oobCount << "," << d.maxVelocity << ","
+                    << d.aabbExtent.x << "," << d.aabbExtent.y << "," << d.aabbExtent.z << ","
+                    << d.aabbMin.x << "," << d.aabbMin.y << "," << d.aabbMin.z << ","
+                    << d.aabbMax.x << "," << d.aabbMax.y << "," << d.aabbMax.z;
+
+                for (const auto& rep : d.repParticles) {
+                    detailFile << "," << rep.position.x << "," << rep.position.y << "," << rep.position.z
+                        << "," << rep.velocityNorm << "," << rep.state << "," << rep.deltaQ;
+                }
+                detailFile << "\n";
+            }
         }
+        std::cout << detailFilepath << " , ";
     }
 
     // FPS ログ出力
-    if (!fpsLogs.empty()) {
-        std::ofstream fpsFile(fpsFilepath);
-        if (fpsFile.is_open()) {
-            fpsFile << "RenderFrame,Fps,FrameTime(ms)\n";
-            for (const auto& f : fpsLogs) {
-                fpsFile << f.renderFrame << "," << f.fps << "," << f.frameTimeMs << "\n";
+    if (options.enableFpsLogging) {
+        if (!fpsLogs.empty()) {
+            std::ofstream fpsFile(fpsFilepath);
+            if (fpsFile.is_open()) {
+                fpsFile << "RenderFrame,Fps,FrameTime(ms)\n";
+                for (const auto& f : fpsLogs) {
+                    fpsFile << f.renderFrame << "," << f.fps << "," << f.frameTimeMs << "\n";
+                }
             }
         }
+        std::cout << fpsFilepath << std::endl;
     }
-
-    std::cout << "Evaluation logs saved to " << perfFilepath << " and " << detailFilepath << " and " << fpsFilepath << std::endl;
 }
