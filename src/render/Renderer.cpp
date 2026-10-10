@@ -134,6 +134,9 @@ void Renderer::drawMpm(const MpmObject& MpmObject, const glm::mat4& view, const 
     glUniform1i(isFloorLoc, 0); // 地面フラグOFF
     glUniform1i(useDebugColorLoc, useDebugColor ? 1 : 0);
 
+    // 描画用バッファを SSBO (binding = 0) としてバインドする
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, MpmObject.getReadVbo());
+
     glBindVertexArray(MpmObject.getRenderVao());
     glDrawArrays(GL_POINTS, 0, MpmObject.count);
     glBindVertexArray(0);

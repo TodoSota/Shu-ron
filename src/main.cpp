@@ -26,11 +26,34 @@
 #include <GLM/gtc/matrix_transform.hpp>
 
 // 粒子数
-const auto kParticleCount{ 100000 }; // ノートPCでやるには10000重いので
-// シミュレーション範囲
+int currentParticleCount{ 10000 };
+// グリッドの解像度
+int currentGrid = 128;
+// 粒子の基準数
+const int baseParticleCount = 10000;
+// シミュレーション範囲への縮尺
 const float kWorldScale = 1.5f;
 // 巻き戻し可能フレーム数
 const int maxFrames = 600;
+
+// mpmSimParam の再設定
+MpmPhysics resetMpmSimParam(MpmPhysics mpmSimParam, int currentGrid) {
+	const float currentGridSpacing = kWorldScale / static_cast<float>(currentGrid);	// グリッドの間隔
+	const float invGridSpacing = 1.0f / currentGridSpacing;
+
+	const float particleRadius = currentGridSpacing * 0.5f;
+	const float particleVolume = particleRadius * particleRadius * particleRadius;
+	const float particleMass = particleVolume * 400.0f; // 密度 400.0f
+
+	mpmSimParam.dx = currentGridSpacing;
+	mpmSimParam.inv_dx = invGridSpacing;
+	mpmSimParam.p_vol = particleVolume;
+	mpmSimParam.p_mass = particleMass;
+	mpmSimParam.p_radius = particleRadius;
+	mpmSimParam.p_overlap = particleRadius * 0.01f;
+
+	return mpmSimParam;
+}
 
 /// メインプログラム
 /// @return プログラムが正常終了した場合 0
@@ -105,16 +128,13 @@ auto main() -> int {
 	bool showMenu{ true };
 #endif
 
-	// MPM シミュレーション領域を生成
-	const int kGrid = 128; // グリッドの解像度
-
 	// シミュレーション空間内に存在するオブジェクトリソースのロード
 	auto sdfResource = std::make_shared<MeshResource>("src/assets/object.obj");
 	sdfResource->generateSDF(64);// 64^3の解像度でSDFを生成
 
 	// インスタンスを作成
 	SdfInstance obstacle(sdfResource);
-	obstacle.position = glm::vec3(0.5f, 0.3f, 0.5f);
+	obstacle.position = glm::vec3(kWorldScale + 1, 0.3f, kWorldScale + 1);
 	obstacle.scale = glm::vec3(0.2f);
 	obstacle.updateMatrices();
 
@@ -122,25 +142,25 @@ auto main() -> int {
 	//const float E = 3.537e5f;	// ヤング率
 	const float E = 5e4f;	// ヤング率
 	const float Nu = 0.3f;	// ポアソン比
-	const float kGridSpacing = kWorldScale / (float)kGrid;	// グリッドの間隔
+	const float currentGridSpacing = kWorldScale / (float)currentGrid;	// グリッドの間隔
 
 	// 空間における設定
 	MpmPhysics mpmSimParam{
 		{0.0f, -9.8f, 0.0f},// 重力
-		1.0 / 1000.0f,		// 時間間隔
+		1.0f / 1000.0f,		// 時間間隔
 		{0.0f, 1.0f, 0.0f},	// 地面の法線
 		0.1f,				// 地面の高さ
 		0.5f,				// 地面の反発係数
 		0.6f,				// 地面の摩擦係数
-		kGridSpacing,		// グリッドの間隔
-		1.0f / kGridSpacing,// 間隔の逆数
+		currentGridSpacing,		// グリッドの間隔
+		1.0f / currentGridSpacing,// 間隔の逆数
 
 		// 粒子
 		0.2f,											// 粒子の反発係数
-		pow(kGridSpacing * 0.5f, 3.0f),					// 粒子の体積
+		pow(currentGridSpacing * 0.5f, 3.0f),					// 粒子の体積
 		E / (2.0f * (1.0f + Nu)),						// 粒子のラメ係数
 		E * Nu / ((1.0f + Nu) * (1.0f - 2.0f * Nu)),	// 粒子のラメ係数
-		(kGridSpacing * 0.5f) * (kGridSpacing * 0.5f) * (kGridSpacing * 0.5f) * 400.0f,// 粒子の質量
+		(currentGridSpacing * 0.5f) * (currentGridSpacing * 0.5f) * (currentGridSpacing * 0.5f) * 400.0f,// 粒子の質量
 		0.01f,											// 粒子の半径
 		0.0001f,										// 粒子の重なり
 		0,												// 調整
@@ -163,15 +183,23 @@ auto main() -> int {
 	glPointSize(static_cast<GLfloat>(window.getSize().y * 0.01));
 	glEnable(GL_POINT_SMOOTH);
 
-	glPointSize(static_cast<GLfloat>(window.getSize().y * 0.01));
-	glEnable(GL_POINT_SMOOTH);
+	// 起動時にコンソールから補間方式を選択させる
+	int interpInput = 1;
+	std::cout << "Select MPM Interpolation Method:\n";
+	std::cout << "  0: Cubic B-Spline\n" << "  1: Linear\n";
+	std::cout << "> ";
+	std::cin >> interpInput;
+	bool useLinear = (interpInput != 0);
 
 	// シミュレーション処理クラスのインスタンス生成
-	MpmSimulator mpmSimulator(kParticleCount, kGrid, kWorldScale);
-	mpmSimulator.resetParticles(1.0f, false);
-	mpmSimulator.setPhysics(mpmSimParam);
+	auto mpmSimulator = std::make_unique< MpmSimulator>(currentParticleCount, currentGrid, kWorldScale, useLinear);
+
+	// 粒子の生成
+	float particleScale = std::cbrt(static_cast<float>(currentParticleCount) / static_cast<float>(baseParticleCount));
+	mpmSimulator->resetParticles(particleScale, false);
+	mpmSimulator->setPhysics(mpmSimParam);
 	// タイムラインマネージャーのインスタンス生成
-	TimelineManager timeline(maxFrames, kParticleCount, 1);
+	auto timeline = std::make_unique< TimelineManager>(maxFrames, currentParticleCount, 1);
 	// 画面描画クラスのインスタンス生成
 	Renderer renderer(kWorldScale);
 	// プレイヤー操作処理のインスタンス生成
@@ -180,11 +208,14 @@ auto main() -> int {
 	Camera camera;
 
 	// タイムライン制御用のフラグ
-	bool isPaused{ false };
+	bool isPaused{ true };
 	bool stepFrame{ false };
 
 	// サブステップ
 	int subSteps = 1;
+
+	// 描画用フレームカウンター
+	int renderFrame = 0;
 
 	// ウィンドウ起動中
 	while (window) {
@@ -220,13 +251,18 @@ auto main() -> int {
 				obstacle.update(currentDt);
 
 				// 値の共有と物理計算の進行
-				mpmSimulator.setPhysics(mpmSimParam);
-				mpmSimulator.step(obstacle);		// *** 計算の主体 ***
+				mpmSimulator->setPhysics(mpmSimParam);
+				mpmSimulator->step(obstacle);		// *** 計算の主体 ***
 			}
 			// コマ送り要求完了のためリセット
 			stepFrame = false;
 			// シミュレーション状況をタイムラインへ記録
-			timeline.recordFrame(mpmSimulator.getReadVbo(), &obstacle);
+			timeline->recordFrame(mpmSimulator->getReadVbo(), &obstacle);
+			// シミュレーションの FPS 状況を評価クラスへ送信
+			float currentFramerate = ImGui::GetIO().Framerate;
+			mpmSimulator->getEvaluator().recordAppFps(renderFrame, currentFramerate, 1000.0f / currentFramerate);
+			renderFrame++;
+			if (currentFramerate < 1) isPaused = true;
 		}
 		else {
 			// 一時停止中もプレビューなどは更新する
@@ -237,7 +273,7 @@ auto main() -> int {
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);// ウィンドウを消去(カラー/デプスバッファを初期状態に)
 		renderer.drawFloor(view,projection,model,mpmSimParam);
 		renderer.drawObstacle(obstacle,view,projection,model);
-		renderer.drawMpm(mpmSimulator.getMpmObject(), view, projection, model, window.getUseDebugColor());
+		renderer.drawMpm(mpmSimulator->getMpmObject(), view, projection, model, window.getUseDebugColor());
 		renderer.drawBoundary(view,projection,glm::mat4(1.0f));
 
 		// Swing モードのプレビュー描画
@@ -251,6 +287,76 @@ auto main() -> int {
 
 #if defined(IMGUI_VERSION)
 		ImGui::Begin("Simulation Control");
+
+		ImGui::Separator();
+		
+		// 評価機能のコントロールパネル
+		ImGui::Text("Evaluation & Logging:");
+		EvaluatorOptions evalOptions = mpmSimulator->getEvaluator().getOptions();	// 現在のオプションを取得
+		bool optionsChanged = false;
+
+		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.0f, 1.0f), "[ GPU Time Measurement ]");
+		if (ImGui::Checkbox("GPU Timer Query", &evalOptions.enableGpuTimer)) optionsChanged = true;
+		ImGui::BeginDisabled(!evalOptions.enableGpuTimer);
+		if (ImGui::Checkbox("Timer Readback (Sync)", &evalOptions.enableGpuTimerReadback)) optionsChanged = true;
+		ImGui::EndDisabled();
+		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.0f, 1.0f), "[ State Evaluation ]");
+		if (ImGui::Checkbox("Evaluation Compute", &evalOptions.enableStateEvaluation)) optionsChanged = true;
+		if (ImGui::Checkbox("State Readback (Sync)", &evalOptions.enableStateReadback)) optionsChanged = true;
+		if (ImGui::Checkbox("Rep Particle Readback (Sync)", &evalOptions.enableRepParticleReadback)) optionsChanged = true;
+
+		if (ImGui::SliderInt("Eval Interval", &evalOptions.stateEvaluationInterval, 1, 100)) optionsChanged = true;
+
+		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.0f, 1.0f), "[ APP FPS Logging ]");
+		if (ImGui::Checkbox("Record App FPS", &evalOptions.enableFpsLogging)) optionsChanged = true;
+
+		// 変更があれば反映
+		if (optionsChanged) {
+			mpmSimulator->getEvaluator().setOptions(evalOptions);
+		}
+
+		ImGui::Spacing();	// --- セーブ / リセット ---
+		ImGui::TextColored(ImVec4(0.2f, 0.8f, 1.0f, 1.0f), "[ File Output Settings ]");
+
+		// 実験ID（再起動してもコード上で初期値を設定するか、UIで直接いじれる）
+		static int expId = 1;
+		ImGui::InputInt("Experiment ID (E**)", &expId);
+
+		// ノート欄（ベースライン、現象発生条件など）
+		static char note[64] = "baseline";
+		ImGui::InputText("Case / Note", note, IM_ARRAYSIZE(note));
+
+		if (ImGui::Button("Save Logs to CSV")) {
+			// --- ExperimentID のフォーマット (例: 1 -> "E01") ---
+			char expIdStr[16];
+			snprintf(expIdStr, sizeof(expIdStr), "E%02d", expId);
+
+			// --- 補間方式の文字列化 ---
+			std::string interpStr = (interpInput == 0) ? "CubicBSpline" : "Linear";
+
+			// --- ベースファイル名の構築 ---
+			// 形式: [ExperimentID]_[Particle]_[Grid]_[Interpolation]_[Case/Note]
+			std::string baseName = std::string(expIdStr) + "_p" + std::to_string(currentParticleCount) + "_g" + std::to_string(currentGrid) + "_" + interpStr + "_" + std::string(note);
+
+			// 各種CSVのファイル名を構築
+			std::string perfFile = baseName + "_perf.csv";
+			std::string detailFile = baseName + "_detail.csv";
+			std::string fpsFile = baseName + "_fps.csv";
+
+			// 保存処理の実行
+			mpmSimulator->getEvaluator().saveLogToCSV(perfFile, detailFile, fpsFile);
+
+			// 保存が完了したら、次の実験に向けて自動でIDを+1しておく
+			expId++;
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Clear Log")) {
+			mpmSimulator->getEvaluator().clearLogs();
+		}
+		
+		ImGui::Separator(); // 区切り線
+
+		ImGui::Text("Timeline Control:");
 
 		// 現在のFPSと1フレームあたりの処理時間を表示
 		ImGui::Text("FPS: %.1f (%.3f ms/frame)", ImGui::GetIO().Framerate, 1000.0f / ImGui::GetIO().Framerate);
@@ -351,23 +457,59 @@ auto main() -> int {
 
 		// タイムラインシークバー
 		ImGui::Spacing();
-		int maxFrameIndex = timeline.getCurrentFrameCount() > 0 ? timeline.getCurrentFrameCount() - 1 : 0;
-		int currentPlaybackFrame = timeline.getPlaybackFrame();
+		int maxFrameIndex = timeline->getCurrentFrameCount() > 0 ? timeline->getCurrentFrameCount() - 1 : 0;
+		int currentPlaybackFrame = timeline->getPlaybackFrame();
 
 		// スライダーを操作したとき
 		if (ImGui::SliderInt("Timeline (Frames)", &currentPlaybackFrame, 0, maxFrameIndex)) {
 			// 強制的にPauseにする
 			isPaused = true;
-			timeline.setPlaybackFrame(currentPlaybackFrame);
+			timeline->setPlaybackFrame(currentPlaybackFrame);
 
 			// 指定した論理フレームの状態をGPU/CPUに復元
-			timeline.restoreToFrame(currentPlaybackFrame, mpmSimulator.getMpmObject().getReadVbo(), &obstacle);
+			timeline->restoreToFrame(currentPlaybackFrame, mpmSimulator->getMpmObject().getReadVbo(), &obstacle);
 		}
 
 		// リスタート
 		if (ImGui::Button("Restart Simulation")) {
-			mpmSimulator.resetParticles(1.0f, false);
-			mpmSimulator.setPhysics(mpmSimParam);
+			particleScale = std::cbrt(static_cast<float>(currentParticleCount) / static_cast<float>(baseParticleCount));
+			mpmSimulator->resetParticles(particleScale, false);
+			mpmSimulator->setPhysics(mpmSimParam);
+		}
+
+		// --- 設定変更とリスタート用UI ---
+		ImGui::Separator();
+		ImGui::TextColored(ImVec4(0.2f, 0.8f, 1.0f, 1.0f), "[ Simulation Restart Settings ]");
+
+		// UIで入力するための変数（staticで保持）
+		static int inputParticleCount = currentParticleCount;
+		static int inputGrid = currentGrid;
+		static int inputInterpolation = interpInput;
+
+		ImGui::InputInt("Particle Count", &inputParticleCount);
+		ImGui::InputInt("Grid Size (ex: 32, 64, 128)", &inputGrid);
+		ImGui::InputInt("Interpolation \n(0 : B spline, 1 : Linear)", &inputInterpolation);
+
+		if (ImGui::Button("Apply & Restart Simulation")) {
+			// 現在稼働中の変数を更新
+			currentParticleCount = inputParticleCount;
+			currentGrid = inputGrid;
+			interpInput = inputInterpolation;
+			useLinear = (interpInput != 0);
+
+			// ===== ここで古いインスタンスが破棄され、新しいインスタンスが生成される =====
+			mpmSimulator = std::make_unique<MpmSimulator>(currentParticleCount, currentGrid, kWorldScale, useLinear);
+			timeline = std::make_unique<TimelineManager>(maxFrames, currentParticleCount, 1);
+
+			// 粒子の再配置と物理パラメータの再適用
+			particleScale = std::cbrt(static_cast<float>(currentParticleCount) / static_cast<float>(baseParticleCount));
+			mpmSimParam =  resetMpmSimParam(mpmSimParam, currentGrid);
+			mpmSimulator->resetParticles(particleScale, false);
+			mpmSimulator->setPhysics(mpmSimParam);
+
+			// 一時停止状態などをリセット
+			isPaused = true;
+			stepFrame = false;
 		}
 
 		ImGui::End();

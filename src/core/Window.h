@@ -5,8 +5,6 @@
 #include <GLFW/glfw3.h> // ウィンドウ周りの機能を提供(OpenGLだけではそのあたりのサポートはない)
 
 // GLMまわり
-#define _USE_MATH_DEFINES	//M_PIなどを使用可能に
-#define GLM_FORCE_RADIANS	//GLMの角度を度の単位でなくラジアンの単位に(もともと暗黙的で紛らわしいらしい)
 #include <GLM/glm.hpp>		//OpenGL向けのC++数学ライブラリ
 #include <GLM/gtc/quaternion.hpp>
 
