@@ -36,6 +36,25 @@ const float kWorldScale = 1.5f;
 // 巻き戻し可能フレーム数
 const int maxFrames = 600;
 
+// mpmSimParam の再設定
+MpmPhysics resetMpmSimParam(MpmPhysics mpmSimParam, int currentGrid) {
+	const float currentGridSpacing = kWorldScale / static_cast<float>(currentGrid);	// グリッドの間隔
+	const float invGridSpacing = 1.0f / currentGridSpacing;
+
+	const float particleRadius = currentGridSpacing * 0.5f;
+	const float particleVolume = particleRadius * particleRadius * particleRadius;
+	const float particleMass = particleVolume * 400.0f; // 密度 400.0f
+
+	mpmSimParam.dx = currentGridSpacing;
+	mpmSimParam.inv_dx = invGridSpacing;
+	mpmSimParam.p_vol = particleVolume;
+	mpmSimParam.p_mass = particleMass;
+	mpmSimParam.p_radius = particleRadius;
+	mpmSimParam.p_overlap = particleRadius * 0.01f;
+
+	return mpmSimParam;
+}
+
 /// メインプログラム
 /// @return プログラムが正常終了した場合 0
 auto main() -> int {
@@ -177,7 +196,7 @@ auto main() -> int {
 
 	// 粒子の生成
 	float particleScale = std::cbrt(static_cast<float>(currentParticleCount) / static_cast<float>(baseParticleCount));
-	mpmSimulator->resetParticles(1, false);
+	mpmSimulator->resetParticles(particleScale, false);
 	mpmSimulator->setPhysics(mpmSimParam);
 	// タイムラインマネージャーのインスタンス生成
 	auto timeline = std::make_unique< TimelineManager>(maxFrames, currentParticleCount, 1);
@@ -484,6 +503,7 @@ auto main() -> int {
 
 			// 粒子の再配置と物理パラメータの再適用
 			particleScale = std::cbrt(static_cast<float>(currentParticleCount) / static_cast<float>(baseParticleCount));
+			mpmSimParam =  resetMpmSimParam(mpmSimParam, currentGrid);
 			mpmSimulator->resetParticles(particleScale, false);
 			mpmSimulator->setPhysics(mpmSimParam);
 
