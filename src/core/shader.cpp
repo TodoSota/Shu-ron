@@ -28,12 +28,8 @@ static auto printShaderInfoLog(GLuint shader, const std::string& str) -> GLboole
 		GLsizei length;
 		glGetShaderInfoLog(shader, bufSize, &length, &infoLog[0]);
 
-		// ログの内容を表示する
-		std::cerr << &infoLog << std::endl;
-
-		std::vector<char> log(bufSize);
-		glGetShaderInfoLog(shader, bufSize, nullptr, log.data());
-		std::cerr << log.data() << std::endl;
+		// ログの内容を表示する（&infoLog ではアドレスが出力されてしまうので c_str() を使う）
+		std::cerr << "[" << str << "]\n" << infoLog.c_str() << std::endl;
 	}
 
 	if (status == GL_FALSE) std::cerr << "Compile Error in " << str << std::endl;
@@ -45,11 +41,11 @@ static auto printShaderInfoLog(GLuint shader, const std::string& str) -> GLboole
 /// プログラムオブジェクトのリンク結果を表示する
 /// param[in] program プログラムオブジェクト名
 /// return リンク結果が正常なら GL_TRUE、異常なら GL_FALSE
-static auto printProgramInfoLog(GLuint program) -> GLboolean {
+static auto printProgramInfoLog(GLuint program, const std::string& str = "") -> GLboolean {
 	// リンク結果を取得
 	GLint status;
 	glGetProgramiv(program, GL_LINK_STATUS, &status);
-	if (status == GL_FALSE) std::cerr << "Link Error." << std::endl;
+	if (status == GL_FALSE) std::cerr << "Link Error in " << str << std::endl;
 
 	// シェーダーのリンク時のログの長さを取得
 	GLsizei bufSize;
@@ -62,8 +58,8 @@ static auto printProgramInfoLog(GLuint program) -> GLboolean {
 		GLsizei length;
 		glGetProgramInfoLog(program, bufSize, &length, &infoLog[0]);
 
-		// ログの内容を表示
-		std::cerr << &infoLog << std::endl;
+		// ログの内容を表示（&infoLog ではアドレスが出力されてしまうので c_str() を使う）
+		std::cerr << infoLog.c_str() << std::endl;
 	}
 
 	// リンク結果を返す
@@ -143,7 +139,7 @@ auto createProgram(const std::string& vsrc, const std::string& fsrc, const std::
 			glLinkProgram(program);
 
 			// エラーがないならプログラムオブジェクトを返す
-			if (printProgramInfoLog(program))return program;
+			if (printProgramInfoLog(program, vmsg + " / " + fmsg))return program;
 		}
 	}
 
@@ -226,7 +222,7 @@ auto createCompute(const std::string& csrc, const std::string& cmsg) -> GLuint {
 		glLinkProgram(program);
 
 		// エラーがないならプログラムオブジェクトを返す
-		if (printProgramInfoLog(program)) return program;
+		if (printProgramInfoLog(program, cmsg)) return program;
 	}
 
 	// エラーならプログラムオブジェクトを削除し 0 を返す

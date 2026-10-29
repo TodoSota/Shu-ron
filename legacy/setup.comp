@@ -1,20 +1,20 @@
 #version 430 core
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
-// —±q‚Ì•¨——Ê
+// ç²’å­ã®ç‰©ç†é‡
 struct Particle
 {
-  // ˆÊ’u
+  // ä½ç½®
   vec4 position;
 
-  // ‘¬“x
+  // é€Ÿåº¦
   vec3 velocity;
 
-  // —Í
+  // åŠ›
   vec3 force;
 };
 
-// —±qŒQƒf[ƒ^
+// ç²’å­ç¾¤ãƒ‡ãƒ¼ã‚¿
 layout(std430, binding = 0) buffer Particles
 {
   Particle particle[];
@@ -22,9 +22,9 @@ layout(std430, binding = 0) buffer Particles
 
 void main()
 {
-  // ƒ[ƒNƒOƒ‹[ƒv ID ‚ğ‚»‚Ì‚Ü‚Ü—±qƒf[ƒ^‚ÌƒCƒ“ƒfƒbƒNƒX‚Ég‚¤
+  // ãƒ¯ãƒ¼ã‚¯ã‚°ãƒ«ãƒ¼ãƒ— ID ã‚’ãã®ã¾ã¾ç²’å­ãƒ‡ãƒ¼ã‚¿ã®ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹ã«ä½¿ã†
   const uint i = gl_WorkGroupID.x;
 
-  // —±q‚Ì—Í‚ğ‰Šú‰»
+  // ç²’å­ã®åŠ›ã‚’åˆæœŸåŒ–
   particle[i].force = vec3(0.0, 0.0, 0.0);
 }
