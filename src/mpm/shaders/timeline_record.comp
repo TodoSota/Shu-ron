@@ -1,5 +1,14 @@
 #version 430 core
 
+//==============================================================================
+// timeline_record.comp : タイムライン (巻き戻し機能) 用の粒子状態の記録
+// 目的: 現在の粒子バッファ全体を、GPU 上の履歴用リングバッファの
+//       writeOffset 番目以降へコピーする (CPU を経由しないので高速)。
+//       記録したフレームは TimelineManager::restoreToFrame で
+//       glCopyBufferSubData により粒子バッファへ戻される。
+// 並列化: 1 スレッド = 1 粒子
+//==============================================================================
+
 // 1グループ 64スレッド
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
@@ -23,6 +32,7 @@ layout(std430, binding = 0) readonly buffer ParticleBuffer { mpmParticle particl
 layout(std430, binding = 1) writeonly buffer HistoryBuffer { mpmParticle history[]; };
 
 
+// 書き込み先の先頭位置 (粒子数 × リングバッファ内のフレーム番号。単位は粒子)
 uniform uint writeOffset;
 
 void main() {

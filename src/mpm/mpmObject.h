@@ -1,5 +1,13 @@
 #pragma once
 
+//==============================================================================
+// mpmObject.h : MPM の GPU データ (粒子バッファと格子テクスチャ) の定義
+// 目的: ・粒子 1 個分の状態 MpmParticle を、GLSL の std430 構造体と
+//         バイト単位で一致するように定義する (計 192 バイト)。
+//       ・粒子バッファを 2 本 (ping-pong) と、それぞれを描画する VAO を持つ。
+//       ・格子を 3D テクスチャ 4 枚 (運動量 X/Y/Z、質量) として持つ。
+//==============================================================================
+
 // バッファオブジェクト関連の宣言はgl.h は含まれていないので glew.h を使う
 #include <GL/glew.h>
 
@@ -15,6 +23,9 @@
 #include "MpmPhysics.h"
 
 /// 粒子の物理量
+/// メモリ配置 (バイトオフセット): position 0, velocity 16, affineC 32, deformation 96,
+///   alpha 160, q 164, vc 168, state 172, scale 176, padding 180–191 → 合計 192 (16 の倍数)
+/// GLSL 側 (std430) の配置と一致していることが前提。メンバを変更するときは全シェーダーの struct も変更すること
 struct MpmParticle {
 
 	alignas(16) glm::vec4 position;		// 位置
@@ -27,8 +38,8 @@ struct MpmParticle {
 	alignas(4) float q;		//硬化状態
 	alignas(4) float vc;	//変化の際の体積変化
 	alignas(4) int state;	//状態(変化)
-	alignas(16) int scale;	//スケール(テクスチャへの書き込み用)
-	alignas(4) int padding[3]; // 調整用
+	alignas(16) int scale;	//スケール(テクスチャへの書き込み用) ※ 現在のシェーダーでは未使用
+	alignas(4) int padding[3]; // 調整用 (padding[0] は材質フラグ: 1 = 石 として描画の色分けに流用)
 };
 
 /// 頂点配列オブジェクト

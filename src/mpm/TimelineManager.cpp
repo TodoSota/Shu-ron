@@ -1,3 +1,6 @@
+//==============================================================================
+// TimelineManager.cpp : タイムラインの記録 (GPU→GPU コピー) と復元
+//==============================================================================
 #include "TimelineManager.h"
 #include "../core/Shader.h"
 #include "../mpm/MpmObject.h"
@@ -59,6 +62,7 @@ void TimelineManager::recordFrame(GLuint sourceVbo, const SdfInstance* sdfs) {
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, 0);  // 計算用の VBO
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, 0); // 結果用の VBO
 
+    // 以下は glCopyBufferSubData で記録していた旧実装 (コンピュートシェーダー方式に置き換え済み)
     /*
     // オフセット計算を size_t で(64bit環境でも稼働するため)
     size_t writeOffset = static_cast<size_t>(headIndex) * frameStride;
@@ -86,6 +90,7 @@ void TimelineManager::recordFrame(GLuint sourceVbo, const SdfInstance* sdfs) {
         sdfHistory[index] = sdfs[i].captureSnapshot();
     }
 
+    // リングバッファの書き込み位置を進める (満杯になったら最古のフレームを上書きする)
     headIndex = (headIndex + 1) % maxFrames;
     if (currentFrameCount < maxFrames) {
         currentFrameCount++;

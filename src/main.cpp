@@ -1,3 +1,12 @@
+//==============================================================================
+// main.cpp : アプリケーションの司令塔 (MVC の結合部)
+// 目的: ウィンドウ・OpenGL・ImGui を初期化し、
+//         Model      : MpmSimulator (MPM の計算), TimelineManager (巻き戻し)
+//         View       : Renderer (描画)
+//         Controller : InteractionController (Shoot / Swing 操作)
+//       を生成して、メインループで「入力 → 物理 (サブステップ) → 記録 → 描画 → UI」を繰り返す。
+//       物理パラメータ (MpmPhysics) はここで決めて毎ステップ UBO へ送る。
+//==============================================================================
 // Windowsの OpenGL ライブラリをリンクする
 #pragma comment(lib, "opengl32.lib")
 
@@ -32,11 +41,17 @@ int currentGrid = 128;
 // 粒子の基準数
 const int baseParticleCount = 10000;
 // シミュレーション範囲への縮尺
+//   シミュレーション領域は [0, kWorldScale]³ (m)。格子間隔 dx = kWorldScale / currentGrid
 const float kWorldScale = 1.5f;
 // 巻き戻し可能フレーム数
+//   ※ 履歴は GPU 上に 粒子数 × 192 バイト × maxFrames だけ確保される
+//     (10,000 粒子で約 1.15 GB、100,000 粒子では約 11.5 GB になり確保できない可能性が高い)
 const int maxFrames = 600;
 
 // mpmSimParam の再設定
+//   目的: 格子解像度を変えて再起動するときに、dx に依存するパラメータ (dx, 1/dx, 粒子体積・質量・半径) を計算し直す。
+//   粒子は「1 辺 dx/2 の立方体」(1 セルに 8 個入る大きさ) とみなし、密度 400 kg/m³ で質量を決めている。
+//   ※ 起動時の初期値 (下の mpmSimParam) では p_radius = 0.01 で、ここでの dx/2 と一致しない
 MpmPhysics resetMpmSimParam(MpmPhysics mpmSimParam, int currentGrid) {
 	const float currentGridSpacing = kWorldScale / static_cast<float>(currentGrid);	// グリッドの間隔
 	const float invGridSpacing = 1.0f / currentGridSpacing;
@@ -58,6 +73,9 @@ MpmPhysics resetMpmSimParam(MpmPhysics mpmSimParam, int currentGrid) {
 /// メインプログラム
 /// @return プログラムが正常終了した場合 0
 auto main() -> int {
+	//--------------------------------------------------------------------------
+	// 1. ウィンドウ・OpenGL・ImGui の初期化
+	//--------------------------------------------------------------------------
 	// GLFW の初期化
 	if (glfwInit() == GL_FALSE) {
 		// 初期化に失敗したのでエラーメッセージ出力
@@ -128,6 +146,11 @@ auto main() -> int {
 	bool showMenu{ true };
 #endif
 
+	//--------------------------------------------------------------------------
+	// 2. 障害物 (SDF) の準備
+	//   メッシュを読み込み、ローカル空間で 64³ の SDF を一度だけ CPU で計算する (起動時に時間がかかる)。
+	//   最初は領域の外 (kWorldScale + 1) に置いておき、Shoot / Swing 操作で領域内へ動かす。
+	//--------------------------------------------------------------------------
 	// シミュレーション空間内に存在するオブジェクトリソースのロード
 	auto sdfResource = std::make_shared<MeshResource>("src/assets/object.obj");
 	sdfResource->generateSDF(64);// 64^3の解像度でSDFを生成
@@ -138,6 +161,17 @@ auto main() -> int {
 	obstacle.scale = glm::vec3(0.2f);
 	obstacle.updateMatrices();
 
+	//--------------------------------------------------------------------------
+	// 3. 材料定数とシミュレーションのパラメータ
+	//   E, ν からラメ定数 μ = E / 2(1+ν), λ = Eν / (1+ν)(1-2ν) を求める。
+	//   コメントアウトされている E = 3.537e5 は Klár et al. 2016 の砂の値
+	//   (同論文の密度は 2200 kg/m³)。
+	//   [点検] 時間刻み Δt = 1e-3 s は、弾性波の CFL 条件
+	//     Δt ≲ C·dx / sqrt((λ + 2μ)/ρ)   (C ≈ 0.3〜0.5)
+	//   を E = 5e4, ν = 0.3, ρ = 400, dx = 1.5/128 で見積もると約 2.7e-4 s になり、
+	//   これより大きい。現状で発散していないのは、G2P の C が dx 倍に小さく
+	//   (mpm_g2p.comp の [点検] を参照)、実質の剛性が非常に低くなっているためと考えられる。
+	//--------------------------------------------------------------------------
 	// 各種材料の特性値とシミュレーションの設定
 	//const float E = 3.537e5f;	// ヤング率
 	const float E = 5e4f;	// ヤング率
@@ -170,6 +204,9 @@ auto main() -> int {
 		{0.0f, 0.0f, 0.0f, 0.0f}
 	};
 
+	//--------------------------------------------------------------------------
+	// 4. 描画状態の初期設定
+	//--------------------------------------------------------------------------
 	// 背景色指定
 	glClearColor(0.8f, 0.8f, 0.8f, 1.0f);
 
@@ -183,7 +220,11 @@ auto main() -> int {
 	glPointSize(static_cast<GLfloat>(window.getSize().y * 0.01));
 	glEnable(GL_POINT_SMOOTH);
 
+	//--------------------------------------------------------------------------
+	// 5. シミュレーション関連オブジェクトの生成
+	//--------------------------------------------------------------------------
 	// 起動時にコンソールから補間方式を選択させる
+	//   ※ 0 で選ばれるのは実際には 2次 (quadratic) B スプライン (mpm_p2g.comp)
 	int interpInput = 1;
 	std::cout << "Select MPM Interpolation Method:\n";
 	std::cout << "  0: Cubic B-Spline\n" << "  1: Linear\n";
@@ -195,6 +236,7 @@ auto main() -> int {
 	auto mpmSimulator = std::make_unique< MpmSimulator>(currentParticleCount, currentGrid, kWorldScale, useLinear);
 
 	// 粒子の生成
+	//   粒子数に比例して初期立方体の体積を変え (1 辺は粒子数の立方根に比例)、粒子の配置密度を一定に保つ
 	float particleScale = std::cbrt(static_cast<float>(currentParticleCount) / static_cast<float>(baseParticleCount));
 	mpmSimulator->resetParticles(particleScale, false);
 	mpmSimulator->setPhysics(mpmSimParam);
@@ -212,11 +254,15 @@ auto main() -> int {
 	bool stepFrame{ false };
 
 	// サブステップ
+	//   1 描画フレームあたりの物理ステップ数。Δt = 1 ms なので、60 fps で 16 ステップなら実時間とほぼ同じ速さになる
 	int subSteps = 1;
 
 	// 描画用フレームカウンター
 	int renderFrame = 0;
 
+	//--------------------------------------------------------------------------
+	// 6. メインループ
+	//--------------------------------------------------------------------------
 	// ウィンドウ起動中
 	while (window) {
 		// 更新処理を行う
@@ -238,6 +284,7 @@ auto main() -> int {
 		glm::mat4 view = camera.getView();// ビュー変換行列を設定・カメラの現在位置を取得
 		glm::mat4 projection = camera.getProjection(window.getAspect());// 投影変換行列を設定
 
+		// --- 物理の更新 (再生中、またはコマ送りが要求されたときだけ) ---
 		// ポーズかコマ送りの場合タイムステップを停止
 		float currentDt = (isPaused && !stepFrame) ? 0.0f : mpmSimParam.timestep;
 
@@ -247,7 +294,7 @@ auto main() -> int {
 				// 入力とカメラ更新
 				controller.update(window, camera, obstacle, currentDt);
 
-				// SDF(障害物) の更新
+				// SDF(障害物) の更新 (速度・角速度による剛体の運動学的な移動。砂から受ける力は考慮しない)
 				obstacle.update(currentDt);
 
 				// 値の共有と物理計算の進行
@@ -256,7 +303,7 @@ auto main() -> int {
 			}
 			// コマ送り要求完了のためリセット
 			stepFrame = false;
-			// シミュレーション状況をタイムラインへ記録
+			// シミュレーション状況をタイムラインへ記録 (サブステップごとではなく、描画 1 フレームに 1 回)
 			timeline->recordFrame(mpmSimulator->getReadVbo(), &obstacle);
 			// シミュレーションの FPS 状況を評価クラスへ送信
 			float currentFramerate = ImGui::GetIO().Framerate;
@@ -269,6 +316,7 @@ auto main() -> int {
 			controller.update(window, camera, obstacle, currentDt);
 		}
 
+		// --- 描画 ---
 		// 画面の描画
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);// ウィンドウを消去(カラー/デプスバッファを初期状態に)
 		renderer.drawFloor(view,projection,model,mpmSimParam);
@@ -285,6 +333,7 @@ auto main() -> int {
 		// OpenGL 周りのエラーがないかチェック
 		Errorcheck();
 
+		// --- UI (ImGui): 評価・ログ、パラメータ、カメラ、タイムライン、再起動の設定 ---
 #if defined(IMGUI_VERSION)
 		ImGui::Begin("Simulation Control");
 
@@ -467,6 +516,7 @@ auto main() -> int {
 			timeline->setPlaybackFrame(currentPlaybackFrame);
 
 			// 指定した論理フレームの状態をGPU/CPUに復元
+			//   (読み出し側の粒子バッファだけを上書きする。次の step() はこのバッファから計算を始める)
 			timeline->restoreToFrame(currentPlaybackFrame, mpmSimulator->getMpmObject().getReadVbo(), &obstacle);
 		}
 
@@ -498,6 +548,7 @@ auto main() -> int {
 			useLinear = (interpInput != 0);
 
 			// ===== ここで古いインスタンスが破棄され、新しいインスタンスが生成される =====
+			//   粒子数と格子解像度は GPU バッファのサイズを決めるので、変更するときはオブジェクトを作り直す
 			mpmSimulator = std::make_unique<MpmSimulator>(currentParticleCount, currentGrid, kWorldScale, useLinear);
 			timeline = std::make_unique<TimelineManager>(maxFrames, currentParticleCount, 1);
 

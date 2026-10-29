@@ -1,5 +1,13 @@
 #version 430 core
 
+//==============================================================================
+// point.vert : MPM 粒子と床を点 (GL_POINTS) で描画する頂点シェーダー
+// 目的: 粒子の位置は VAO の属性 0 から受け取り、状態 (state) と材質フラグ
+//       (padding[0]) は、同じバッファを SSBO として束縛して gl_VertexID で直接読む。
+//       床の描画にも同じシェーダーを使い、is_floor == 1 のときは
+//       床の平面の式から頂点の高さを計算する。
+//==============================================================================
+
 // 頂点の位置 (C++ の VAO から)
 layout (location = 0) in vec4 position;
 
@@ -37,6 +45,7 @@ out flat int v_material;
 void main(){
 	vec4 pos = position;
 	if(is_floor == 1) {
+		// 床の平面 n·x = h を y について解き、格子状に並べた頂点を平面上に載せる
 		float h = floor_height - (floor_normal.x * pos.x + floor_normal.z * pos.z) / floor_normal.y;
 		pos.y = h;
 		v_state = -1;	// 地面用のダミー値

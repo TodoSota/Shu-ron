@@ -1,3 +1,9 @@
+//==============================================================================
+// MpmSimulator.cpp : MPM シミュレーション本体 (Model)
+// 目的: 粒子・格子の GPU リソースとコンピュートシェーダーを保持し、
+//       1 ステップ = Setup → P2G → Grid → G2P の 4 パスを順にディスパッチする。
+//       物理の計算はすべて GPU 上で行い、CPU は描画・UI とパラメータの転送だけを行う。
+//==============================================================================
 #include "MpmSimulator.h"
 #include "MpmPhysics.h"
 #include "../sdf/SdfInstance.h"
@@ -14,11 +20,12 @@ MpmSimulator::MpmSimulator(int particleCount, int gridSize, float worldScale, bo
     : mpmObject(particleCount, gridSize), worldScale(worldScale), evaluator()
 {
     // コンピュートシェーダーのロード
+    //   実行ファイルの作業ディレクトリ (= プロジェクトのルート) からの相対パスで読み込む
     mpmSetup = loadCompute("src/mpm/shaders/mpm_setup.comp");
     mpmGrid = loadCompute("src/mpm/shaders/mpm_grid.comp");
     // 指定の補間方法のファイルを選択
     if (!useLinear) {
-        // 通常
+        // 通常 (実装は 2次 B スプライン。下のメッセージの "Cubic" は誤り)
         mpmP2G = loadCompute("src/mpm/shaders/mpm_p2g.comp");
         mpmG2P = loadCompute("src/mpm/shaders/mpm_g2p.comp");
         std::cout << "Loaded MPM Shaders: Cubic B-Spline Interpolation" << std::endl;
@@ -35,6 +42,7 @@ MpmSimulator::MpmSimulator(int particleCount, int gridSize, float worldScale, bo
     }
 
     // Uniform ロケーションの取得
+    //   障害物 (SDF) の姿勢は毎ステップ変わるので、ロケーションを先に取得しておき step() で送る
     sdfModelLoc = glGetUniformLocation(mpmGrid, "sdf_model");
     sdfInvModelLoc = glGetUniformLocation(mpmGrid, "sdf_inv_model");
     sdfVelocityLoc = glGetUniformLocation(mpmGrid, "sdf_velocity");
@@ -44,12 +52,14 @@ MpmSimulator::MpmSimulator(int particleCount, int gridSize, float worldScale, bo
     sdfCenterLoc = glGetUniformLocation(mpmGrid, "sdf_center");
 
     // 物理パラメータ転送用の UBO を生成
+    //   全シェーダーで共通の MPMPhysics ブロック (binding = 1) に束縛して共有する
     glGenBuffers(1, &physicsUbo);
     glBindBuffer(GL_UNIFORM_BUFFER, physicsUbo);
     glBufferData(GL_UNIFORM_BUFFER, sizeof(MpmPhysics), nullptr, GL_DYNAMIC_DRAW);
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
     // 評価クラスでの評価機能初期設定 : 全てOFF
+    //   計測は同期 (読み戻し) を伴って性能に影響するので、既定ではすべて無効にし UI から有効にする
     EvaluatorOptions initOptions;
     initOptions.enableGpuTimer = false;
     initOptions.enableGpuTimerReadback = false;
@@ -74,6 +84,16 @@ MpmSimulator::~MpmSimulator() {
 
 // --- 初期化・設定 ---
 
+/// 粒子の初期配置と物理状態の初期化
+/// @param[in] scale  初期形状の大きさの倍率 (main.cpp では粒子数の立方根に比例させ、粒子密度を一定に保つ)
+/// @param[in] sphere true なら球、false なら立方体の内部に一様乱数で配置する
+/// @note [点検] 球の場合: u, v, w が dist(-1, 1) から取られているため、
+///       v = dist*2-1 の範囲は [-3, 1]、w < 0 では cbrt(w) < 0 となり、球の一様分布にならない。
+///       一様分布にするには u, w を [0, 1)、v を [-1, 1) から取る。中心も worldScale ではなく 0.5 に固定されている。
+/// @note [点検] 粒子の体積・質量 (MpmPhysics の p_vol, p_mass) は (dx/2)³ 固定で、
+///       実際の配置密度 (初期体積 / 粒子数) とは無関係に設定されている。
+///       既定の 10,000 粒子・grid 128 では 1 セルあたり約 0.6 粒子 (MPM の目安は 2次 B スプラインで 8 程度) で、
+///       粒子の体積は実際の占有体積の約 1/13 になる。実質の密度は 400 ではなく約 30 kg/m³ に相当する。
 void MpmSimulator::resetParticles(float scale, bool sphere) {
     //std::random_device seed_gen;
     //std::mt19937 engine(seed_gen());
@@ -110,6 +130,9 @@ void MpmSimulator::resetParticles(float scale, bool sphere) {
         }
 
         // 粒子の初期化
+        //   F = I (無変形)、C = 0、q = 0 (未硬化)、vc = 0 (体積補正なし)
+        //   alpha = 0.267765 は摩擦角 25° の Drucker–Prager 係数 sqrt(2/3)·2sinφ/(3 - sinφ)
+        //   ([点検] G2P の硬化式 (h3 = 3) では q = 0 のとき 32° になり、初期値と一致しない)
         position[i].velocity = glm::vec4(0.0f);
         position[i].affineC = glm::mat4(0.0f);
         position[i].deformation = glm::mat4(1.0f);
@@ -128,6 +151,7 @@ void MpmSimulator::resetParticles(float scale, bool sphere) {
     glUnmapBuffer(GL_ARRAY_BUFFER); // 情報入力
 
     // もう片方(1番)にコピーする
+    //   ping-pong のどちらから始めても同じ状態になるように、両方のバッファを初期化しておく
     glBindBuffer(GL_COPY_READ_BUFFER, mpmObject.vbo[0]);
     glBindBuffer(GL_COPY_WRITE_BUFFER, mpmObject.vbo[1]);
     glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, 0, sizeof(MpmParticle) * mpmObject.count);
@@ -152,12 +176,18 @@ void MpmSimulator::setPhysics(const MpmPhysics& physics) {
 // --- メイン処理 (演算パイプライン) ---
 
 /// コンピュートシェーダーを実行し、シミュレーションを1ステップ進める
+/// 1 ステップの流れ (Δt = MpmPhysics::timestep):
+///   Setup : 格子を 0 クリア
+///   P2G   : 粒子 → 格子へ質量・運動量・応力による力積を散布
+///   Grid  : 格子速度 = 運動量 / 質量、重力、床と障害物の境界条件
+///   G2P   : 格子 → 粒子へ速度・C を回収、F の更新と塑性、移流 (結果は書き込みバッファへ)
+/// 各パスの間に glMemoryBarrier を置き、前のパスの書き込みが次のパスから見えることを保証する。
 void MpmSimulator::step(const SdfInstance& obstacle) {
     // ダブルバッファの選択
     GLuint readVbo = MpmSimulator::getReadVbo();
     GLuint writeVbo = MpmSimulator::getWriteVbo();
 
-    // SDFテクスチャのバインド
+    // SDFテクスチャのバインド (mpm_grid.comp の sampler3D, binding = 4)
     glActiveTexture(GL_TEXTURE4);
     glBindTexture(GL_TEXTURE_3D, obstacle.resource->sdfTexture3D);
 
@@ -175,11 +205,13 @@ void MpmSimulator::step(const SdfInstance& obstacle) {
     glUniform3fv(sdfCenterLoc, 1, glm::value_ptr(obstacle.position));
 
     // データバッファのバインド
+    //   粒子の VBO をそのまま SSBO として束縛する (描画用 VAO と同じバッファ。CPU へのコピーは発生しない)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, readVbo);  // 計算用の VBO をセット
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, writeVbo); // 結果用の VBO をセット
     glBindBufferBase(GL_UNIFORM_BUFFER, 1, physicsUbo);
 
     // グリッドの情報転送
+    //   R32F テクスチャを R32UI の image として束縛する (CAS による float の atomic 加算のため)
     glBindImageTexture(0, mpmObject.gridTexX, 0, GL_TRUE, 0, GL_READ_WRITE, GL_R32UI);
     glBindImageTexture(1, mpmObject.gridTexY, 0, GL_TRUE, 0, GL_READ_WRITE, GL_R32UI);
     glBindImageTexture(2, mpmObject.gridTexZ, 0, GL_TRUE, 0, GL_READ_WRITE, GL_R32UI);
@@ -215,12 +247,13 @@ void MpmSimulator::step(const SdfInstance& obstacle) {
     evaluator.beginTimer("G2P");
     glDispatchCompute(particleGroups, 1, 1);
     evaluator.endTimer("G2P");
+    // G2P の SSBO 書き込みを、次ステップの SSBO 読み出しと描画の頂点属性読み出しの両方に見せる
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
 
     // ping-pongスワップ(ダブルバッファの切り替え) 
     mpmObject.swapBuffers();
     
-    // シミュレーション評価実行
+    // シミュレーション評価実行 (swap 後なので writeVbo が最新の粒子状態を持つ)
     stepCount++;    // シミュレーション評価のステップを進める
     evaluator.evaluateStep(writeVbo, mpmObject.count, stepCount);
     

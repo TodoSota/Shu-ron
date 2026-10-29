@@ -1,5 +1,23 @@
 #version 430 core
 
+//==============================================================================
+// mpm_grid.comp : Grid (格子) 更新ステップ
+//
+// 目的:
+//   P2G で集めた格子点ごとの「運動量 (力積込み)」と「質量」から格子点の速度を求め、
+//     ・重力 (外力) の適用
+//     ・床 (無限平面) との境界条件: 法線方向の侵入を止め、Coulomb 摩擦を適用
+//     ・SDF で表した剛体障害物との境界条件: 障害物の速度に対する相対速度で
+//       同じく侵入を止め、Coulomb 摩擦を適用 (一方向連成: 砂は剛体を押し返さない)
+//   を行い、結果を「運動量」の形で格子に書き戻す。
+//
+//   MPM では境界条件を粒子ではなく格子の速度に課すのが基本であり、
+//   この段階が衝突処理の本体になる。
+//
+// 並列化の方針: 1 スレッド = 1 格子点。8×8×8 のグループで格子全体を覆う。
+//   各スレッドは自分の格子点だけを読み書きするので atomic 操作は不要。
+//==============================================================================
+
 // 8*8*8 のスレッドグループでグリッド全体を走査
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 
@@ -9,6 +27,8 @@ layout(r32ui, binding = 1) uniform uimage3D gridIMY;
 layout(r32ui, binding = 2) uniform uimage3D gridIMZ;
 layout(r32ui, binding = 3) uniform uimage3D gridIMA;
 // SDF テクスチャ 1枚
+//   障害物メッシュのローカル空間 (AABB に余白を加えた範囲) で、符号付き距離を R32F で格納したもの。
+//   線形補間でサンプリングする (MeshResource::generateSDF で生成)
 layout(binding = 4) uniform sampler3D sdf_tex;
 
 // MPMの粒子群の物理パラメータ
@@ -44,7 +64,7 @@ layout(std140, binding = 1) uniform MPMPhysics {
 float uintToFloat(uint val) { return uintBitsToFloat(val); }
 uint floatToUint(float val) { return floatBitsToUint(val); }
 
-// SDF のユニフォーム変数
+// SDF のユニフォーム変数 (障害物 1 個分の姿勢と速度。MpmSimulator::step で毎ステップ設定)
 uniform mat4 sdf_model;
 uniform mat4 sdf_inv_model;
 uniform vec3 sdf_velocity;
@@ -57,7 +77,7 @@ void main() {
 	ivec3 coords = ivec3(gl_GlobalInvocationID.xyz);
 	ivec3 size = imageSize(gridIMX);
 
-	// 範囲外アクセス防止
+	// 範囲外アクセス防止 (格子サイズが 8 の倍数でない場合の端数スレッド)
     if (coords.x >= size.x || coords.y >= size.y || coords.z >= size.z) return;
 
 	// 1. グリッドデータ読み込み
@@ -75,6 +95,12 @@ void main() {
 	v += gravity * timestep;	// 重力を適用
 
 	// 3. 境界条件・当たり判定
+	// [点検] P2G / G2P では格子点 i の位置を i·dx として重みを計算しているが、
+	//   ここでは (i + 0.5)·dx (セル中心) としているため、境界判定の位置が半セル
+	//   ずれる (床が実質 0.5dx 低い、SDF が 0.5dx ずれる)。
+	//   P2G / G2P と揃えるなら pos = vec3(coords) * dx にする。
+	//   また、床以外の領域の端 (6 面) には壁の条件が無い。領域外へ出た粒子は格子に
+	//   寄与できなくなる。
 	vec3 pos = (vec3(coords) + vec3(0.5)) * dx;	// 現在のセルの世界座標の計算
 
 	float dist = dot(pos, f_normal) - f_height;	// 床との判定・グリッドでの判定なので、ノードが床を貫通しているのかを見ている
@@ -83,12 +109,13 @@ void main() {
 	if (dist < 0.0) {
 		float v_normal = dot(v, f_normal); // 法線方向の成分を取得
 
-		// 下向きに落下してるなら
+		// 下向きに落下してるなら (床から離れる向きの速度は拘束しない = separating 境界)
 		if (v_normal < 0.0) {
 			vec3 vn = f_normal * v_normal;	// 法線方向の速度
 			vec3 vt = v - vn;				// 接線方向の速度
 
-			// 摩擦
+			// 摩擦 (Coulomb): 法線方向に止めた速度 |v_n| に比例して接線速度を減らし、
+			// 減らしきれる場合は 0 にする (静止摩擦)
 			float vt_len = length(vt);
 			if(vt_len > 1e-7){
 				float friction_factor = max(0.0, 1.0 - f_friction * abs(v_normal) / vt_len);
@@ -96,6 +123,9 @@ void main() {
 			}
 
 			// 速度の更新
+			//   法線成分を -e·v_n で反転させている (反発係数 e)。
+			//   ※ 連続体としての MPM では、格子の境界条件は v_n = 0 (非弾性) とするのが普通で、
+			//     格子速度を反発させると、境界付近の粒子が跳ねたり振動したりする原因になりうる。
 			v = vt - f_restitution * vn;
 		}
 	}
@@ -111,7 +141,7 @@ void main() {
 	// 1. 現在のグリッドノードのワールド座標を計算 
 	// ※ 追加分
 
-	// 2. ワールド座標 -> SDFローカル座標への逆変換
+	// 2. ワールド座標 -> SDFローカル座標への逆変換 (障害物の平行移動・回転・拡大を打ち消す)
 	vec4 pos_local_vec4 = sdf_inv_model * vec4(pos, 1.0);
 	vec3 pos_local = pos_local_vec4.xyz;
 
@@ -119,14 +149,21 @@ void main() {
 	if (all(greaterThanEqual(pos_local, sdf_aabb_min)) && all(lessThanEqual(pos_local, sdf_aabb_max))) {
     
 		// 4. ローカル座標 -> テクスチャUVW座標 (0.0 ~ 1.0) へのマッピング
+		//   [点検] SDF のボクセル値は sdfMin + idx·cellSize (cellSize = 幅 / (res - 1)) の
+		//   「格子点」で計算されているが、texture() はテクセル中心 (idx + 0.5) / res で
+		//   補間する。正確に対応させるなら
+		//   uvw = (pos_local - min) / (max - min) * (res - 1) / res + 0.5 / res とする
+		//   (最大で半ボクセルずれる)。
 		vec3 uvw = (pos_local - sdf_aabb_min) / (sdf_aabb_max - sdf_aabb_min);
     
 		// 5. 距離のサンプリング
 		float dist_local = texture(sdf_tex, uvw).r;
 		// 等方前提なので注意！！！！
+		// (sdf_model の第 1 列の長さ = x 方向の拡大率でローカル距離をワールド距離に換算している。
+		//  Swing モードの (0.06, 0.4, 0.06) のような非等方スケールでは、距離の値が正しくない)
 		float dist_world = dist_local * length(vec3(sdf_model[0]));// X軸スケールからスケールをかけてワールドでの距離に
     
-		// 6. 衝突判定 (距離が0以下ならめり込んでいる)
+		// 6. 衝突判定 (距離が粒子半径より小さければ接触しているとみなす)
 		if (dist_world < p_radius) {
         
 			// --- 法線(Normal)の計算 (中央差分) ---
@@ -142,6 +179,9 @@ void main() {
 			float nz = (texture(sdf_tex, uvw + epsZ).r - texture(sdf_tex, uvw - epsZ).r) / (2.0 * texel.z);
         
 			// ローカル空間での法線
+			//   [点検] 上の差分は uvw 空間での勾配である。AABB が立方体でない場合は、
+			//   各成分をその軸の幅 (sdf_aabb_max - sdf_aabb_min) で割らないと、
+			//   ローカル空間の法線の向きにならない。
 			vec3 normal_local = normalize(vec3(nx, ny, nz));
         
 			// 7. ローカル法線 -> ワールド法線への変換 (正行列の3x3部分を掛ける)
@@ -149,6 +189,9 @@ void main() {
 			vec3 normal_world = normalize(mat3(transpose(sdf_inv_model)) * normal_local);
         
 			// 8. 衝突解決 (相対速度の押し出し)
+			//   剛体上の点の速度 v_point = v_trans + ω × r を基準にした相対速度で、
+			//   床と同じ「侵入成分を止めて Coulomb 摩擦を適用する」処理を行う。
+			//   (ペナルティ力ではなく、速度を直接拘束する方式)
 			vec3 r = pos - sdf_center;
 
 			// v_point = v_trans + ω × r
@@ -186,6 +229,7 @@ void main() {
 	}
 
 	// 4. 更新されたデータを戻す
+	//   G2P は「運動量 / 質量」で速度を読むので、速度に質量を掛けて運動量の形で書き戻す
 	// 質量は更新されていないので不要
 	imageStore(gridIMX, coords, uvec4(floatToUint(v.x * m)));
     imageStore(gridIMY, coords, uvec4(floatToUint(v.y * m)));

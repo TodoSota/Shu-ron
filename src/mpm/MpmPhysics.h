@@ -1,4 +1,14 @@
 #pragma once
+
+//==============================================================================
+// MpmPhysics.h : シミュレーション全体で共通の物理パラメータ (UBO)
+// 目的: GLSL の uniform ブロック MPMPhysics (std140, binding = 1) とメモリ配置を一致させ、
+//       glBufferSubData で一度に GPU へ転送する。
+//       std140 では vec3 が 16 バイト境界に揃えられるため、vec3 の直後に float を 1 個置いて
+//       16 バイトを埋める配置にしている (gravity + timestep, f_normal + f_height)。
+// 単位: SI 単位系 (m, s, kg, Pa) を想定している。
+// 未使用: p_restitution, p_overlap, obstacle_sphere, obstacle_velocity は現在どのシェーダーでも使われていない。
+//==============================================================================
 #include <GL/glew.h>
 #include <GLM/glm.hpp>
 
@@ -18,8 +28,8 @@ struct MpmPhysics {
 	// 粒子
 	alignas(4) GLfloat p_restitution;	// 粒子の反発係数
 	alignas(4) GLfloat p_vol;			// 粒子の体積
-	alignas(4) GLfloat p_mu;			// 粒子のラメ係数
-	alignas(4) GLfloat p_lambda;		// 粒子のラメ係数
+	alignas(4) GLfloat p_mu;			// 粒子のラメ係数 (第 2 定数 μ = せん断弾性係数 E / 2(1+ν))
+	alignas(4) GLfloat p_lambda;		// 粒子のラメ係数 (第 1 定数 λ = Eν / (1+ν)(1-2ν))
 
 	alignas(4) GLfloat p_mass;			// 粒子の質量
 	alignas(4) GLfloat p_radius;		// 粒子の半径

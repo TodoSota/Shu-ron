@@ -1,3 +1,8 @@
+//==============================================================================
+// InteractionController.cpp : Shoot / Swing の入力処理と運動学的な軌道の計算
+// レイの生成: スクリーン座標 → NDC → 逆射影でビュー空間 → 逆ビューでワールド空間、
+//             カメラ位置からその点への方向をレイとする。
+//==============================================================================
 #include "InteractionController.h"
 #include "../core/Window.h"
 #include "../core/Camera.h"
@@ -120,6 +125,9 @@ void InteractionController::handleSwingMode(Window& window, const Camera& camera
     }
 
     // スイング運動のキネマティック更新
+    //   角度 θ(t) = -θmax cos(ωt)、角速度 dθ/dt = θmax ω sin(ωt) (ω = swingSpeedMult) で、
+    //   t = 0〜π の半周期だけ振る。棒の中心は支点から swingRadius 下にあり、
+    //   並進速度は v = Ω × offset (支点まわりの剛体回転) として Grid シェーダーへ渡す
     if (swingState == SwingState::Swinging) {
         swingCurrentTime += dt * swingSpeedMult;
         float phase = swingCurrentTime;

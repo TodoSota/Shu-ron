@@ -1,11 +1,19 @@
 #pragma once
+
+//==============================================================================
+// SDFInstance.h : 空間内に置かれた障害物 1 個の状態 (インスタンス)
+// 目的: 共有リソース (MeshResource) を参照しながら、位置・回転 (クォータニオン)・拡大率・
+//       並進速度・角速度を個別に持つ。モデル行列とその逆行列をキャッシュしておき、
+//       Grid シェーダーでワールド座標を SDF のローカル座標へ変換するのに使う。
+//       運動は速度・角速度による運動学的な更新のみ (重力や砂からの反力は考慮しない一方向連成)。
+//==============================================================================
 #include <GLM/glm.hpp>
 #include <GLM/gtc/matrix_transform.hpp>
 #include <memory>
 #include "../core/MeshResource.h"
 #include <GLM/gtx/quaternion.hpp>
 
-// SDFの状態を表現した構造体
+// SDFの状態を表現した構造体 (タイムラインへの記録・復元用のスナップショット)
 struct SdfSnapshot {
     glm::vec3 position;
     glm::vec3 velocity;

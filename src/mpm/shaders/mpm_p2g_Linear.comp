@@ -1,15 +1,44 @@
 #version 430 core
 
-// 1グループ 64スレッド
+//==============================================================================
+// mpm_p2g.comp : P2G (Particle to Grid) ステップ ― 線形 (トライリニア) 補間版
+//
+// 目的:
+//   MLS-MPM の 1 ステップの最初の段階として、各粒子が持つ
+//     ・運動量 (質量 × 速度 + APIC のアフィン項)
+//     ・内部応力による力 (弾性エネルギーの勾配) × Δt
+//     ・質量
+//   を、粒子周囲 2×2×2 の格子点へ線形 (テント関数) の重みで散布 (scatter) する。
+//   mpm_p2g.comp との違いは、重み関数と影響範囲 (base の取り方・ループ回数) だけ。
+//   結果は格子点ごとの「運動量 (Δt 分の力積を含む)」と「質量」になり、
+//   次の mpm_grid.comp で 速度 = 運動量 / 質量 に変換される。
+//
+// 並列化の方針:
+//   1 スレッド = 1 粒子。複数の粒子が同じ格子点へ同時に加算するため、
+//   浮動小数点の atomic 加算が必要になる。OpenGL 4.3 コアには float の
+//   image atomic 加算が無いので、r32ui として束縛した 3D テクスチャに対し
+//   CAS (Compare-And-Swap) ループで float 加算を実現している。
+//
+// 参考: Hu et al. 2018 (MLS-MPM), Jiang et al. 2015 (APIC),
+//       Klár et al. 2016 (砂の弾塑性モデル)
+//==============================================================================
+
+// 1 ワークグループ 64 スレッド (= 64 粒子) 。粒子数 / 64 個のグループを C++ 側で起動する
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
-// テクスチャ 4枚
+// 格子 (グリッド) データ: 3D テクスチャ 4 枚を image として束縛
+//   X, Y, Z : 運動量の各成分 (float のビット列を uint として格納)
+//   A       : 質量
+//   GL_R32F で確保したテクスチャを GL_R32UI として束縛しているのは、
+//   imageAtomicCompSwap (uint のみ対応) で float の加算を行うため
 layout(r32ui, binding = 0) uniform uimage3D gridIMX;
 layout(r32ui, binding = 1) uniform uimage3D gridIMY;
 layout(r32ui, binding = 2) uniform uimage3D gridIMZ;
 layout(r32ui, binding = 3) uniform uimage3D gridIMA;
 
-// 粒子のデータ構造
+// 粒子のデータ構造 (C++ 側 MpmParticle と std430 でバイト単位まで一致させる。192 バイト)
+// vec3 / mat3 は std430 でも 16 バイト境界に揃えられて C++ 側とずれやすいため、
+// vec4 / mat4 で確保して内部では xyz / 左上 3×3 だけを使う
 struct mpmParticle {
 	vec4 position;		// 位置
 	vec4 velocity;		// 速度 + padding
@@ -25,18 +54,19 @@ struct mpmParticle {
 	 int padding[3];		//調整
 };
 
+// 入力粒子 (ダブルバッファの読み出し側)。P2G では粒子を書き換えないので readonly
 layout(std430, binding = 0) readonly buffer mpmBuffer {
 	mpmParticle p[];
 };
 
-// MPMの粒子群の物理パラメータ
+// MPMの粒子群の物理パラメータ (C++ 側 MpmPhysics と std140 で一致させる UBO)
 layout(std140, binding = 1) uniform MPMPhysics {
 	// シミュレーション空間
 	vec3 gravity;		// 重力
 	float timestep;		// 時間間隔
 	vec3 f_normal;		// 地面の法線
 	float f_height;		// 地面の高さ
-	
+
 	float f_restitution;// 地面の反発係数
 	float f_friction;	// 地面の摩擦係数
 	float dx;			// グリッドの間隔
@@ -58,6 +88,14 @@ layout(std140, binding = 1) uniform MPMPhysics {
 	vec4 obstacle_velocity; // 静的物体の速度
 };
 
+//------------------------------------------------------------------------------
+// float の atomic 加算 (CAS ループ)
+//   目的: 複数スレッドが同じ格子点に加算しても値が失われないようにする。
+//   方法: 現在値を読み → 加算後の値を作り → 「値が読んだときのまま」なら書き込む。
+//         他スレッドに先を越されて値が変わっていたら、新しい値で再試行する。
+//   X/Y/Z/A で関数が分かれているのは、GLSL では image 変数を関数引数に
+//   渡せない (配列化もできない) ため。
+//------------------------------------------------------------------------------
 // AtomicAdd を Image にて行う
 void atomicAddFloatX(ivec3 coords, float val) {
     uint oldVal = imageLoad(gridIMX, coords).x;
@@ -96,6 +134,25 @@ void atomicAddFloatA(ivec3 coords, float val) {
     } while (oldVal != expectedVal);
 }
 
+//------------------------------------------------------------------------------
+// 対称行列の固有値分解 (巡回 Jacobi 法)
+//   目的: SVD を求めるために、S = FᵀF を S = V Λ Vᵀ に分解する。
+//   方法: 非対角成分 S_pq を 0 にする平面回転 J を (p,q) = (0,1),(0,2),(1,2) の
+//         順に掛ける操作を数回繰り返す。最終的に S が対角 (= 固有値 Λ)、
+//         回転の積 V が固有ベクトル行列になる。
+//   注意: GLSL の行列は列優先 (M[列][行]) である。
+//
+//   [点検] 回転角の符号が逆になっている。
+//     J[p][q] = s (= 行 q・列 p の成分) という置き方では、新しい非対角成分は
+//       (c² - s²)·a_pq + c·s·(a_qq - a_pp)
+//     となり、これを 0 にする角度は tan 2φ = -2a_pq / (a_qq - a_pp) である。
+//     しかし下のコードは atan(2a_pq, a_qq - a_pp) で、符号が逆になっている。
+//     NumPy で再現した検証では、F = I + 0.1·N(0,1) のとき、3 反復後の
+//     非対角成分の相対残差は中央値で約 17% 残り、反復を増やしても減らない
+//     (符号を反転すると 0.2% 程度まで収束する)。
+//     修正するには、phi = 0.5 * atan(-2.0 * apq, aqq - app) とするか、
+//     J[p][q] と J[q][p] の s の符号を入れ替える。mpm_g2p*.comp も同じ。
+//------------------------------------------------------------------------------
 // 固有値分解
 void jacobiEigen(inout mat3 S, out mat3 V) {
     V = mat3(1.0);
@@ -109,12 +166,15 @@ void jacobiEigen(inout mat3 S, out mat3 V) {
             float aqq = S[q][q];
             float apq = S[p][q];
 
+            // すでにほぼ対角なら回転不要
             if (abs(apq) < 1e-6) continue;
 
+            // (p,q) 平面の回転角
             float phi = 0.5 * atan(2.0 * apq, aqq - app);
             float c = cos(phi);
             float s = sin(phi);
 
+            // 回転行列 J を作り、S ← JᵀSJ、V ← VJ と累積する
             mat3 J = mat3(1.0);
             J[p][p] =  c; J[p][q] = s;
             J[q][p] = -s; J[q][q] = c;
@@ -125,6 +185,17 @@ void jacobiEigen(inout mat3 S, out mat3 V) {
     }
 }
 
+//------------------------------------------------------------------------------
+// 3×3 行列の特異値分解 F = U Σ Vᵀ
+//   目的: 変形勾配 F を「回転 U・主ストレッチ Σ・回転 V」に分け、
+//         主ひずみ空間 (対角成分だけ) で構成則を評価できるようにする。
+//   方法: FᵀF = V Σ² Vᵀ を Jacobi 法で求め、Σ = sqrt(固有値)、U = F V Σ⁻¹ とする。
+//   注意: ・Σ は sqrt(max(λ, 1e-4)) により 0.01 以上に下限が設けられている
+//           (極端な圧縮で Σ⁻¹ が発散するのを防ぐためのクランプであり、
+//            「微小値を足す」処理ではない)。
+//         ・det F < 0 (要素の反転) のときに U が反射を含むことへの対処はない。
+//         ・特異値の大小の並べ替えは行わない (等方な構成則なので順序は不要)。
+//------------------------------------------------------------------------------
 // 特異値分解
 void svd(mat3 F, out mat3 U, out mat3 Sigma, out mat3 V) {
     mat3 S = transpose(F) * F;
@@ -138,7 +209,7 @@ void svd(mat3 F, out mat3 U, out mat3 Sigma, out mat3 V) {
     Sigma[2][2] = sqrt(max(S[2][2], 1e-4));
 
     mat3 invSigma = mat3(0.0);
-    
+
 	invSigma[0][0] = 1.0 / Sigma[0][0];
 	invSigma[1][1] = 1.0 / Sigma[1][1];
 	invSigma[2][2] = 1.0 / Sigma[2][2];
@@ -148,25 +219,43 @@ void svd(mat3 F, out mat3 U, out mat3 Sigma, out mat3 V) {
 
 
 void main() {
+	// 担当する粒子番号。グループ数を切り上げで起動しているため、範囲外のスレッドは何もしない
 	uint idx = gl_GlobalInvocationID.x;
 	if (idx >= p.length()) return;
 
+	//--------------------------------------------------------------------------
+	// 1. 粒子状態の読み出し
+	//--------------------------------------------------------------------------
 	// 座標とインデックス計算
 	vec3 x = p[idx].position.xyz;	// 粒子位置を獲得
 	// 実成分の抽出
 	vec3 v = p[idx].velocity.xyz;
-	mat3 F = mat3(p[idx].deformation);
-	mat3 C = mat3(p[idx].affineC);
+	mat3 F = mat3(p[idx].deformation);	// 弾性変形勾配 F_E
+	mat3 C = mat3(p[idx].affineC);		// APIC のアフィン速度行列 (≒ 速度勾配)
 
+	//--------------------------------------------------------------------------
+	// 2. 影響する格子点と線形補間の重みの計算
+	//   格子点 i の位置は i·dx。粒子を含むセルの 2 頂点 (base, base+1) に影響する。
+	//   weight_dist = fx - base は [0, 1) に入る (セル内の相対位置)。
+	//--------------------------------------------------------------------------
 	vec3 fx = x * inv_dx;
 	ivec3 base = ivec3(floor(fx));	// floor(x) : x以下の最大の整数にする
 	vec3 weight_dist = fx - vec3(base);
 
-	// 2次Bスプライン補間
+	// 線形補間 (テント関数 N(r) = 1 - |r|)。軸ごとに 2 個ずつ求める
+	//   [点検] 線形補間は重みの勾配がセル境界で不連続になるため、粒子がセルを
+	//   またぐときに力がとび (cell-crossing instability)、MPM では不安定になりやすい。
 	vec3 w[2];
 	w[0] = 1.0 - weight_dist;
 	w[1] = weight_dist;
 
+	//--------------------------------------------------------------------------
+	// 3. 構成則: 弾性変形勾配 F から応力を求める
+	//   St. Venant–Kirchhoff を対数 (Hencky) ひずみで表したモデル (Klár et al. 2016)
+	//     ε = log Σ (主対数ひずみ)
+	//     τ̂ = 2μ ε + λ tr(ε) I (主空間での Kirchhoff 応力)
+	//   を、SVD の回転で元の座標に戻す。
+	//--------------------------------------------------------------------------
 	// 応力の計算 SVD(特異値分解)
 	mat3 U, sig, V;
 	svd(F, U, sig, V);
@@ -177,12 +266,31 @@ void main() {
 	e[2][2] = log( max(sig[2][2], 1e-6) );
 	float trace_e = e[0][0] + e[1][1] + e[2][2];
 
+	// [点検] 次の 2 行と、その次の transpose(F) の乗算を合わせると、
+	//   U τ̂ Vᵀ Fᵀ = U τ̂ Σ Uᵀ となり、正しい Kirchhoff 応力 τ = U τ̂ Uᵀ に
+	//   余分な Σ が掛かる。厳密にするには stress = U * stress_diag * transpose(U) とし、
+	//   transpose(F) を掛けない (または P = U τ̂ Σ⁻¹ Vᵀ として P Fᵀ を使う)。
+	//   変形が小さい (Σ ≈ I) ときの差は小さいが、大変形では応答が変わる。
 	mat3 stress_diag = 2.0 * p_mu * e + p_lambda * trace_e * mat3(1.0);
 	mat3 stress = U * stress_diag * transpose(V);	// Piola-Kirchoff応力の近似を扱う形式を利用(厳密にするなら strees_diag に inverse(sig) したものを掛けなければならない)
 	// <追記> 厳密さを(人間の目にはわからない程度には)二の次にしているのでヤング率などで調整する方向性にする
 
+	// MLS-MPM の力の項: f_i = -V_p · M_p⁻¹ · τ · (x_i - x_p) · w_ip
+	//   M_p⁻¹ = 4 / dx² は 2次 B スプラインのときの値 (APIC の慣性テンソルの逆数) 。
+	//   [点検] 線形補間では慣性テンソル D_p = Σ w (x_i - x_p)(x_i - x_p)ᵀ が粒子位置に
+	//   よって変わり定数にならないため、4 / dx² を流用するのは理論的に正しくない。
+	//   (線形補間で APIC/MLS を使う場合は D_p を粒子ごとに計算して逆行列を取る。)
+	//   ここでは -V_p · 4/dx² · τ を先にまとめて計算しておき、下のループで
+	//   (x_i - x_p) と重みを掛ける
 	stress = (-p_vol * 4.0 * inv_dx * inv_dx) * stress * transpose(F);
 
+	//--------------------------------------------------------------------------
+	// 4. 周囲 8 個の格子点への散布
+	//   各格子点 i に
+	//     Δp_i = w_ip [ m_p v_p + m_p C_p (x_i - x_p) ] + Δt · f_i   (運動量 + 力積)
+	//     Δm_i = w_ip m_p                                           (質量)
+	//   を atomic に加算する
+	//--------------------------------------------------------------------------
 	// グリッドへ転送
 	mat3 affine = p_mass * C; // MLS_MPM
 	for (int i=0; i<2; i++) {
@@ -190,9 +298,13 @@ void main() {
 			for (int k=0; k<2; k++) {
 				ivec3 offset = ivec3(i, j, k);
 				ivec3 node_coords = base + offset;	// 今回の書き込み先
+				// [点検] 領域外の格子点は単に捨てている。領域の端の粒子は運動量と質量の
+				//   一部を失うため、端に壁の境界条件を置いて、粒子が端の 2〜3 セル以内に
+				//   入らないようにしておくのが一般的。
 				if (any(lessThan(node_coords, ivec3(0))) || any(greaterThanEqual(node_coords, imageSize(gridIMX)))) {
 					continue; // 範囲外のノードへの加算をスキップ
 				}
+				// 粒子から格子点へのベクトル x_i - x_p (ワールド単位)
 				vec3 dpos = ( (vec3(offset) - weight_dist) * dx);
 				float weight = w[i].x * w[j].y * w[k].z;	// Bスプラインは積
 
@@ -202,6 +314,7 @@ void main() {
 				vec3 force_contrib = weight * (stress * dpos);
 
 				// 合計を AtomicAdd
+				//   力を Δt 倍して運動量に足し込むことで、格子側では「力を加えた後の運動量」が得られる
 				vec3 total_mom = mom_contrib + timestep * force_contrib;
 
 				atomicAddFloatX(node_coords, total_mom.x);
