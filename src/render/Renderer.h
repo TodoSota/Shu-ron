@@ -10,6 +10,7 @@
 //   Spheres : drawScene() による deferred shading
 //             (A) シャドウマップ → (B) G-buffer → (F) SSAO → (G) 陰影の計算
 //   Surface : Spheres の (B) と (F) の間に、粒子の面を張る処理 (D)(E) を入れる
+//   粉塵 (H): Spheres / Surface モードで、(G) の後に半透明で重ねる (DustSystem)
 //             (パスの名前は docs/rendering_guide.md の図に対応する)
 //==============================================================================
 
@@ -24,6 +25,7 @@
 #include "ShadowMap.h"
 #include "SsaoPass.h"
 #include "ScreenSpaceSurface.h"
+#include "DustSystem.h"
 #include "PassTimer.h"
 
 // 前方宣言
@@ -70,6 +72,7 @@ private:
     ShadowMap shadowMap;
     std::unique_ptr<SsaoPass> ssao;
     std::unique_ptr<ScreenSpaceSurface> surface;
+    std::unique_ptr<DustSystem> dust;
     PassTimer timer;
     float worldScale{ 1.0f };
 
@@ -120,6 +123,12 @@ public:
     /// @param[in] framebufferWidth, framebufferHeight 画面のフレームバッファの大きさ [px]
     void drawScene(const MpmObject& mpmObject, const SdfInstance& obstacle, const MpmPhysics& physics,
         const glm::mat4& view, const glm::mat4& projection, int framebufferWidth, int framebufferHeight, bool useDebugColor);
+
+    /// 粉塵を発生させて dt 秒進める (シミュレーションを進めたフレームに 1 回呼ぶ)
+    void updateDust(const MpmObject& mpmObject, const MpmPhysics& physics, float dt);
+
+    /// 粉塵をすべて消す (巻き戻し・再起動のとき)
+    void clearDust();
 
     /// 描画設定の UI (ImGui) を表示する
     void drawSettingsUi();

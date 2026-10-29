@@ -62,6 +62,20 @@ struct RenderSettings {
 	float grainStrength{ 0.3f };		// ノイズによる細かい凹凸の強さ
 	float grainScale{ 1.0f };			// 凹凸の大きさ = grainScale × 描画半径
 
+	// --- 粉塵 (段階 3。Spheres / Surface モードで描く) ---
+	bool dust{ true };
+	float dustEmitRate{ 0.06f };		// 条件を満たす粒子 1 個が、1 フレームに粉塵を出す確率
+	float dustSpeedThreshold{ 1.0f };	// これより速い砂の粒子から粉塵が出る [m/s] (2 倍の速さで最大)
+	float dustNearFloor{ 0.12f };		// 床からこの高さ以内の粒子だけが粉塵を出す [m] (着地・崩落の場所)
+	float dustLifetime{ 3.0f };			// 寿命の平均 [s] (±50% でばらつかせる)
+	float dustSize{ 6.0f };				// 発生時の大きさ = dustSize × 描画半径
+	float dustGrowth{ 2.0f };			// 1 秒あたりに大きさが何倍分広がるか
+	float dustOpacity{ 0.15f };			// 1 個あたりの濃さ
+	float dustDrag{ 1.5f };				// 空気抵抗 [1/s] (速度が e^(-drag·t) で減る)
+	float dustSinkSpeed{ 0.05f };		// 沈む速さ [m/s]
+	float dustTurbulence{ 0.25f };		// 乱流のような揺らぎの強さ [m/s]
+	glm::vec3 dustColor{ 0.62f, 0.55f, 0.45f };
+
 	// --- デバッグ表示 ---
 	int debugView{ 0 };					// 0: 通常, 1: albedo, 2: 法線, 3: AO, 4: 影
 

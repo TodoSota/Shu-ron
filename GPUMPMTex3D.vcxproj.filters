@@ -69,6 +69,9 @@
     <ClCompile Include="src\render\ScreenSpaceSurface.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
+    <ClCompile Include="src\render\DustSystem.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
     <ClCompile Include="src\controller\InteractionController.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
@@ -131,6 +134,21 @@
     </None>
     <None Include="src\render\shaders\surface_composite.frag">
       <Filter>シェーダーファイル</Filter>
+    </None>
+    <None Include="src\render\shaders\dust.vert">
+      <Filter>シェーダーファイル</Filter>
+    </None>
+    <None Include="src\render\shaders\dust.frag">
+      <Filter>シェーダーファイル</Filter>
+    </None>
+    <None Include="src\render\shaders\wboit_composite.frag">
+      <Filter>シェーダーファイル</Filter>
+    </None>
+    <None Include="src\render\shaders\dust_emit.comp">
+      <Filter>コンピュートシェーダファイル</Filter>
+    </None>
+    <None Include="src\render\shaders\dust_update.comp">
+      <Filter>コンピュートシェーダファイル</Filter>
     </None>
     <None Include="legacy\setup.comp">
       <Filter>コンピュートシェーダファイル</Filter>
@@ -215,6 +233,9 @@
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
     <ClInclude Include="src\render\ScreenSpaceSurface.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="src\render\DustSystem.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
     <ClInclude Include="src\mpm\MpmPhysics.h">

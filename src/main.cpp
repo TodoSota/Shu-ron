@@ -309,6 +309,8 @@ auto main() -> int {
 				mpmSimulator->setPhysics(mpmSimParam);
 				mpmSimulator->step(obstacle);		// *** 計算の主体 ***
 			}
+			// 粉塵を、このフレームで進めたシミュレーション時間だけ進める
+			renderer.updateDust(mpmSimulator->getMpmObject(), mpmSimParam, mpmSimParam.timestep * subSteps);
 			// コマ送り要求完了のためリセット
 			stepFrame = false;
 			// シミュレーション状況をタイムラインへ記録 (サブステップごとではなく、描画 1 フレームに 1 回)
@@ -537,12 +539,14 @@ auto main() -> int {
 			// 指定した論理フレームの状態をGPU/CPUに復元
 			//   (読み出し側の粒子バッファだけを上書きする。次の step() はこのバッファから計算を始める)
 			timeline->restoreToFrame(currentPlaybackFrame, mpmSimulator->getMpmObject().getReadVbo(), &obstacle);
+			renderer.clearDust();	// 粉塵の状態は記録していないので、巻き戻したら消す
 		}
 
 		// リスタート
 		if (ImGui::Button("Restart Simulation")) {
 			particleScale = std::cbrt(static_cast<float>(currentParticleCount) / static_cast<float>(baseParticleCount));
 			mpmSimulator->resetParticles(particleScale, false);
+			renderer.clearDust();
 			mpmSimulator->setPhysics(mpmSimParam);
 		}
 
@@ -575,6 +579,7 @@ auto main() -> int {
 			particleScale = std::cbrt(static_cast<float>(currentParticleCount) / static_cast<float>(baseParticleCount));
 			mpmSimParam =  resetMpmSimParam(mpmSimParam, currentGrid);
 			mpmSimulator->resetParticles(particleScale, false);
+			renderer.clearDust();
 			renderer.settings.particleSpacing = particleSpacing(particleScale, currentParticleCount);
 			mpmSimulator->setPhysics(mpmSimParam);
 

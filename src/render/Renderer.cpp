@@ -247,6 +247,7 @@ void Renderer::initDeferred() {
 
     ssao = std::make_unique<SsaoPass>();
     surface = std::make_unique<ScreenSpaceSurface>();
+    dust = std::make_unique<DustSystem>();
 }
 
 // 床の平面 n·x = h 上に、領域を十分に覆う四角形を置く
@@ -442,11 +443,28 @@ void Renderer::drawScene(const MpmObject& mpmObject, const SdfInstance& obstacle
     glBindVertexArray(0);
     timer.end();
 
+    // --- (H) 粉塵: 陰影を付けた画像の上に、半透明で重ねる ---
+    if (settings.dust) {
+        timer.begin("Dust");
+        dust->draw(gbuffer.depthTexture(), fbWidth, fbHeight, view, projection,
+            settings.shadows ? shadowMap.depthTexture() : 0, shadowMap.getViewProjection(),
+            settings.particleRadius(), settings, emptyVAO);
+        timer.end();
+    }
+
     // 後始末 (この後に描く枠線・プレビュー・ImGui が従来どおり描けるように戻す)
     for (int unit = 4; unit >= 0; --unit) { glActiveTexture(GL_TEXTURE0 + unit); glBindTexture(GL_TEXTURE_2D, 0); }
     glDepthFunc(GL_LESS);
     glUseProgram(0);
     glClearColor(0.8f, 0.8f, 0.8f, 1.0f);	// main.cpp の背景色に戻す (Points モード用)
+}
+
+void Renderer::updateDust(const MpmObject& mpmObject, const MpmPhysics& physics, float dt) {
+    dust->update(mpmObject, physics, dt, settings.particleRadius(), settings);
+}
+
+void Renderer::clearDust() {
+    dust->clear();
 }
 
 void Renderer::drawSettingsUi() {
@@ -479,6 +497,21 @@ void Renderer::drawSettingsUi() {
     ImGui::SliderFloat("Exposure", &settings.exposure, 0.2f, 3.0f);
     ImGui::ColorEdit3("Sand color", &settings.sandColor[0]);
     ImGui::SliderFloat("Color variation", &settings.colorVariation, 0.0f, 0.4f);
+    ImGui::Checkbox("Dust", &settings.dust);
+    if (settings.dust && ImGui::TreeNode("Dust settings")) {
+        ImGui::SliderFloat("Emit rate", &settings.dustEmitRate, 0.0f, 0.2f, "%.3f");
+        ImGui::SliderFloat("Speed threshold [m/s]", &settings.dustSpeedThreshold, 0.1f, 3.0f);
+        ImGui::SliderFloat("Near floor [m]", &settings.dustNearFloor, 0.0f, 0.5f);
+        ImGui::SliderFloat("Lifetime [s]", &settings.dustLifetime, 0.5f, 8.0f);
+        ImGui::SliderFloat("Size", &settings.dustSize, 0.5f, 8.0f);
+        ImGui::SliderFloat("Growth", &settings.dustGrowth, 0.0f, 5.0f);
+        ImGui::SliderFloat("Opacity", &settings.dustOpacity, 0.0f, 0.5f);
+        ImGui::SliderFloat("Drag", &settings.dustDrag, 0.1f, 10.0f);
+        ImGui::SliderFloat("Turbulence", &settings.dustTurbulence, 0.0f, 1.0f);
+        ImGui::ColorEdit3("Dust color", &settings.dustColor[0]);
+        if (ImGui::Button("Clear dust")) clearDust();
+        ImGui::TreePop();
+    }
     if (ImGui::TreeNode("Advanced")) {
         ImGui::SliderFloat("AO radius scale", &settings.ssaoRadiusScale, 1.0f, 10.0f);
         ImGui::SliderFloat("AO power", &settings.ssaoPower, 0.5f, 4.0f);
