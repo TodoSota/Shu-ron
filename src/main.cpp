@@ -384,7 +384,7 @@ auto main() -> int {
 		ImGui::Separator(); // 区切り線
 
 		ImGui::Text("Camera Settings:");
-		const char* modes[] = { "Orbit (俯瞰)", "FPS (主観)" };
+		const char* modes[] = { u8"Orbit (俯瞰)", u8"FPS (主観)" };
 		int currentMode = (int)camera.mode;
 		if (ImGui::Combo("Camera Mode", &currentMode, modes, IM_ARRAYSIZE(modes))) {
 			camera.mode = (CameraMode)currentMode;
@@ -401,7 +401,7 @@ auto main() -> int {
 		ImGui::Text("Timeline Control:");
 
 		// 再生 / 一時停止のトグルボタン
-		if (ImGui::Button(isPaused ? "▶ Play" : "■ Pause")) {
+		if (ImGui::Button(isPaused ? u8"▶ Play" : u8"■ Pause")) {
 			isPaused = !isPaused;
 		}
 		ImGui::SameLine();
@@ -411,7 +411,7 @@ auto main() -> int {
 			ImGui::BeginDisabled(); // 稼働中はグレーアウト
 		}
 		ImGui::PushButtonRepeat(true);	// 長押しでリピート可能
-		if (ImGui::Button("▶▶ Step Forward (1 Frame)")) {
+		if (ImGui::Button(u8"▶▶ Step Forward (1 Frame)")) {
 			stepFrame = true;
 		}
 		ImGui::PopButtonRepeat();		// 長押しリピート設定解除

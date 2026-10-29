@@ -221,7 +221,7 @@ void main() {
 	particleOut[idx].q = delta_q;
 	particleOut[idx].alpha = sqrt(2.0/3.0) * (2.0 * sin(phi)) / (3.0 - sin(phi));
 	particleOut[idx].vc = particleIn[idx].vc -log(max(det_after, 1e-6)) + log(max(det_before, 1e-6)); // 行列がつぶれ 0 の場合をなくす
-	particleOut[idx].position.xyz += new_v * timestep; // 補正後の位置を追加
+	particleOut[idx].position.xyz = particleIn[idx].position.xyz + new_v * timestep; // 補正後の位置を追加（particleOut は writeonly なので particleIn から読む）
 	particleOut[idx].deformation = mat4(F_after);
 	particleOut[idx].velocity = vec4(new_v, 0);
 	particleOut[idx].affineC = mat4(new_C);

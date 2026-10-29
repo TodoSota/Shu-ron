@@ -1,52 +1,52 @@
-/// }Œ`ŠÖ˜A‚Ìˆ—
+/// å›³å½¢é–¢é€£ã®å‡¦ç†
 #include "Object.h"
 
-/// ƒRƒ“ƒXƒgƒ‰ƒNƒ^
-/// @param[in] count ’¸“_”
-/// @param[in] data ƒf[ƒ^
+/// ã‚³ãƒ³ã‚¹ãƒˆãƒ©ã‚¯ã‚¿
+/// @param[in] count é ‚ç‚¹æ•°
+/// @param[in] data ãƒ‡ãƒ¼ã‚¿
 Object::Object(GLsizei count, const void* data) :
-	// ’¸“_”z—ñƒIƒuƒWƒFƒNƒg‚ðì¬‚µ‚Ä vao ‚ðì¬‚·‚é
+	// é ‚ç‚¹é…åˆ—ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã‚’ä½œæˆã—ã¦ vao ã‚’ä½œæˆã™ã‚‹
 	vao{ []() {GLuint vao; glGenVertexArrays(1, &vao); return vao; }() },
-	// ’¸“_ƒoƒbƒtƒ@ƒIƒuƒWƒFƒNƒg‚ðì¬‚µ‚Ä vbo ‚ðì¬‚·‚é
+	// é ‚ç‚¹ãƒãƒƒãƒ•ã‚¡ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã‚’ä½œæˆã—ã¦ vbo ã‚’ä½œæˆã™ã‚‹
 	vbo{ []() {GLuint vbo; glGenBuffers(1, &vbo); return vbo; }() },
-	// ’¸“_‚Ì”‚ð•Û‘¶
+	// é ‚ç‚¹ã®æ•°ã‚’ä¿å­˜
 	count{ count }
 {
-	// ’¸“_”z—ñƒIƒuƒWƒFƒNƒg‚ðŒ‹‡
+	// é ‚ç‚¹é…åˆ—ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã‚’çµåˆ
 	glBindVertexArray(vao);
 
-	// ’¸“_ƒoƒbƒtƒ@ƒIƒuƒWƒFƒNƒg‚ðŒ‹‡‚µ‚Ä’¸“_”z—ñƒIƒuƒWƒFƒNƒg‚É‘g‚Ýž‚Þ
+	// é ‚ç‚¹ãƒãƒƒãƒ•ã‚¡ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã‚’çµåˆã—ã¦é ‚ç‚¹é…åˆ—ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã«çµ„ã¿è¾¼ã‚€
 	glBindBuffer(GL_ARRAY_BUFFER, vbo);
 
-	// ’¸“_ƒoƒbƒtƒ@ƒIƒuƒWƒFƒNƒg‚Ìƒƒ‚ƒŠ‚ðŠm•Û‚µ’¸“_ˆÊ’uƒf[ƒ^‚ð“]‘—
+	// é ‚ç‚¹ãƒãƒƒãƒ•ã‚¡ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã®ãƒ¡ãƒ¢ãƒªã‚’ç¢ºä¿ã—é ‚ç‚¹ä½ç½®ãƒ‡ãƒ¼ã‚¿ã‚’è»¢é€
 	glBufferData(GL_ARRAY_BUFFER, sizeof(Particle) * count, data, GL_DYNAMIC_DRAW);
 
-	/// [in]•Ï” 0 ”Ô‚É position
-	/// [in]•Ï” 1 ”Ô‚É velocity
+	/// [in]å¤‰æ•° 0 ç•ªã« position
+	/// [in]å¤‰æ•° 1 ç•ªã« velocity
 
-	// Œ‹‡‚³‚ê‚Ä‚¢‚é’¸“_ƒoƒbƒtƒ@ƒIƒuƒWƒFƒNƒg‚ÌƒCƒ“ƒfƒbƒNƒX‚ð 0 ”Ô‚É
+	// çµåˆã•ã‚Œã¦ã„ã‚‹é ‚ç‚¹ãƒãƒƒãƒ•ã‚¡ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã®ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹ã‚’ 0 ç•ªã«
 	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(Particle), static_cast<char*>(0) + offsetof(Particle, position));
 
-	// 0 ”Ô‚Ì’¸“_ƒoƒbƒtƒ@ƒIƒuƒWƒFƒNƒg‚ð—LŒø‚É
+	// 0 ç•ªã®é ‚ç‚¹ãƒãƒƒãƒ•ã‚¡ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã‚’æœ‰åŠ¹ã«
 	glEnableVertexAttribArray(0);
 
-	// Œ‹‡‚³‚ê‚Ä‚¢‚é’¸“_ƒoƒbƒtƒ@ƒIƒuƒWƒFƒNƒg‚Ì velocity ‚ÌƒCƒ“ƒfƒbƒNƒX‚ð 1 ”Ô‚É‚·‚é
+	// çµåˆã•ã‚Œã¦ã„ã‚‹é ‚ç‚¹ãƒãƒƒãƒ•ã‚¡ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã® velocity ã®ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹ã‚’ 1 ç•ªã«ã™ã‚‹
 	glVertexAttribPointer(1, 3, GL_FLOAT, GLU_FALSE, sizeof(Particle), static_cast<char*>(0) + offsetof(Particle, velocity));
 
-	// 1 ”Ô‚Ì’¸“_ƒoƒbƒtƒ@ƒIƒuƒWƒFƒNƒg‚ð—LŒø‚É
+	// 1 ç•ªã®é ‚ç‚¹ãƒãƒƒãƒ•ã‚¡ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã‚’æœ‰åŠ¹ã«
 	glEnableVertexAttribArray(1);
 
-	// ’¸“_”z—ñƒIƒuƒWƒFƒNƒg‚ÌŒ‹‡‚ð‰ðœ‚·‚é
+	// é ‚ç‚¹é…åˆ—ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã®çµåˆã‚’è§£é™¤ã™ã‚‹
 	glBindVertexArray(0);
 
-	// ’¸“_ƒoƒbƒtƒ@ƒIƒuƒWƒFƒNƒg‚ÌŒ‹‡‚ð‰ðœ‚·‚é
+	// é ‚ç‚¹ãƒãƒƒãƒ•ã‚¡ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã®çµåˆã‚’è§£é™¤ã™ã‚‹
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
 Object::~Object() {
-	// ’¸“_”z—ñƒIƒuƒWƒFƒNƒg‚ðíœ
+	// é ‚ç‚¹é…åˆ—ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã‚’å‰Šé™¤
 	glDeleteVertexArrays(1, &vao);
 
-	// ’¸“_ƒoƒbƒtƒ@ƒIƒuƒWƒFƒNƒg‚ðíœ
+	// é ‚ç‚¹ãƒãƒƒãƒ•ã‚¡ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã‚’å‰Šé™¤
 	glDeleteBuffers(1, &vbo);
 }

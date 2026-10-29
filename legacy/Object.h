@@ -1,9 +1,9 @@
 #pragma once
 
-// ƒoƒbƒtƒ@ƒIƒuƒWƒFƒNƒgŠÖ˜A‚ÌéŒ¾‚Ígl.h ‚ÍŠÜ‚Ü‚ê‚Ä‚¢‚È‚¢‚Ì‚Å glew.h ‚ğg‚¤
+// ãƒãƒƒãƒ•ã‚¡ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆé–¢é€£ã®å®£è¨€ã¯gl.h ã¯å«ã¾ã‚Œã¦ã„ãªã„ã®ã§ glew.h ã‚’ä½¿ã†
 #include <GL/glew.h>
 
-// GLM ŠÖ˜A
+// GLM é–¢é€£
 #if !defined(_USE_MATH_DEFINES)
 #	define _USE_MATH_DEFINES
 #endif
@@ -12,29 +12,29 @@
 #endif
 #include <GLM/glm.hpp>
 
-/// —±q‚Ì•¨——Ê
+/// ç²’å­ã®ç‰©ç†é‡
 struct Particle {
 
-	alignas(16) glm::vec4 position;// ˆÊ’u
-	alignas(16) glm::vec3 velocity;// ‘¬“x
-	alignas(16) glm::vec3 force;// —Í
+	alignas(16) glm::vec4 position;// ä½ç½®
+	alignas(16) glm::vec3 velocity;// é€Ÿåº¦
+	alignas(16) glm::vec3 force;// åŠ›
 
 };
 
-/// ’¸“_”z—ñƒIƒuƒWƒFƒNƒg
+/// é ‚ç‚¹é…åˆ—ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆ
 struct Object {
 	
-	const GLuint vao;		// ’¸“_”z—ñƒIƒuƒWƒFƒNƒg
-	const GLuint vbo;		// ’¸“_ƒoƒbƒtƒ@ƒIƒuƒWƒFƒNƒg–¼
-	const GLsizei count;	// ’¸“_”
+	const GLuint vao;		// é ‚ç‚¹é…åˆ—ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆ
+	const GLuint vbo;		// é ‚ç‚¹ãƒãƒƒãƒ•ã‚¡ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆå
+	const GLsizei count;	// é ‚ç‚¹æ•°
 
-	/// ƒRƒ“ƒXƒgƒ‰ƒNƒ^
-	/// @param[in] count ’¸“_‚Ì”
-	/// @param[in] data ƒf[ƒ^
+	/// ã‚³ãƒ³ã‚¹ãƒˆãƒ©ã‚¯ã‚¿
+	/// @param[in] count é ‚ç‚¹ã®æ•°
+	/// @param[in] data ãƒ‡ãƒ¼ã‚¿
 	Object(GLsizei count, const void* data = nullptr);
 
-	Object(const Object& object) = delete;				// ƒRƒs[ƒRƒ“ƒXƒgƒ‰ƒNƒ^‚ğ‹Ö~
-	virtual ~Object();									// ƒfƒRƒ“ƒXƒgƒ‰ƒNƒ^
-	Object& operator = (const Object& object) = delete;	// ‘ã“ü‰‰Zq‚Íg—p‚µ‚È‚¢
-	Object& operator=(Object&& object) = default;		// ƒ€[ƒu‘ã“ü‰‰Zq‚ÍƒfƒtƒHƒ‹ƒg‚ğg—p
+	Object(const Object& object) = delete;				// ã‚³ãƒ”ãƒ¼ã‚³ãƒ³ã‚¹ãƒˆãƒ©ã‚¯ã‚¿ã‚’ç¦æ­¢
+	virtual ~Object();									// ãƒ‡ã‚³ãƒ³ã‚¹ãƒˆãƒ©ã‚¯ã‚¿
+	Object& operator = (const Object& object) = delete;	// ä»£å…¥æ¼”ç®—å­ã¯ä½¿ç”¨ã—ãªã„
+	Object& operator=(Object&& object) = default;		// ãƒ ãƒ¼ãƒ–ä»£å…¥æ¼”ç®—å­ã¯ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆã‚’ä½¿ç”¨
 };
