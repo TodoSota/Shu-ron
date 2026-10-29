@@ -47,7 +47,11 @@ void main() {
 	vec3 color = pow(toneMap(dustColor * v_light * exposure), vec3(1.0 / 2.2));
 
 	// 重み (McGuire & Bavoil 2013 の式 (10) を基にした深度と α の関数)
-	float w = clamp(pow(min(1.0, alpha * 10.0) + 0.01, 3.0) * 1e8 * pow(1.0 - gl_FragCoord.z * 0.9, 3.0), 1e-2, 3e3);
+	// 元の式 (係数 1e8、範囲 [1e-2, 3e3]) を 1/100 にしている。合成の色は Σ w·α·c / Σ w·α という
+	// 比なので、重み全体に同じ係数を掛けても結果は変わらない。一方で、accum (16 ビット浮動小数点、
+	// 最大 65504) があふれるまでに重ねられる粉塵の数は 100 倍になる
+	// (元の式のままだと、濃い粉塵が 1 画素に約 150 個重なっただけであふれる)
+	float w = clamp(pow(min(1.0, alpha * 10.0) + 0.01, 3.0) * 1e6 * pow(1.0 - gl_FragCoord.z * 0.9, 3.0), 1e-4, 30.0);
 	o_accum = vec4(color * alpha, alpha) * w;
 	o_reveal = alpha;
 }

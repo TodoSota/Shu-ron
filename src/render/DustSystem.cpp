@@ -120,10 +120,11 @@ void DustSystem::ensureTargets(int width, int height, GLuint sceneDepthTex) {
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 		return t;
 	};
-	// accum は 32 ビット浮動小数点にする。16 ビット (最大 65504) では、粉塵が数千個重なる画素で
-	// Σ w·α が上限を超えて無限大になり、平均の色 (accum.rgb / accum.a) が NaN になって
-	// 黒や白に塗りつぶされる (重み w は最大 3000)
-	accumTex = makeTex(GL_RGBA32F, GL_RGBA);
+	// accum は 16 ビット浮動小数点 (最大 65504)。Σ w·α があふれないように、dust.frag の重み w の
+	// 上限を 30 にしている (1 個あたり最大 30 × 0.15 = 4.5 なので、約 15,000 個重なるまであふれない)
+	// ただし有効桁は約 3 桁なので、1 画素に数千個重なると 1 個分の寄与が丸めで消え、縞が出る。
+	// 極端に濃い粉塵を使う場合は GL_RGBA32F にする (メモリと帯域は 2 倍)
+	accumTex = makeTex(GL_RGBA16F, GL_RGBA);
 	revealTex = makeTex(GL_R16F, GL_RED);
 	glBindTexture(GL_TEXTURE_2D, 0);
 

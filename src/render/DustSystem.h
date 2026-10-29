@@ -49,7 +49,7 @@ private:
 	GLuint drawProgram{ 0 };
 	GLuint compositeProgram{ 0 };
 
-	// WBOIT 用のオフスクリーン (accum: RGBA32F, revealage: R16F)。前後判定はシェーダーで G-buffer の深度と比べる
+	// WBOIT 用のオフスクリーン (accum: RGBA16F, revealage: R16F)。前後判定はシェーダーで G-buffer の深度と比べる
 	GLuint fbo{ 0 };
 	GLuint accumTex{ 0 };
 	GLuint revealTex{ 0 };
