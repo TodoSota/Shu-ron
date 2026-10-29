@@ -1,5 +1,17 @@
 #version 430 core
 
+//==============================================================================
+// mpm_evaluator.comp : シミュレーション状態の評価 (実験・論文用の計測)
+// 目的: 全粒子を走査して、次の統計量を GPU 上で集計する。
+//   ・位置・速度の NaN / Inf の数 (数値破綻の検出)
+//   ・領域外 (|x| > 10) に飛び出した粒子数
+//   ・正常な粒子の数、最大速度、粒子群の AABB (堆積形状の広がり)
+// 集計は atomic 演算で行う。float の最大値は、正の float のビット列が uint として
+// 大小順に並ぶ性質を使って atomicMax(uint) で求め、AABB は固定小数点
+// (×SCALE) の int に変換して atomicMin / atomicMax で求めている。
+// 結果は MpmEvaluator が glGetBufferSubData で読み戻して CSV に出力する。
+//==============================================================================
+
 layout(local_size_x = 64) in;
 
 // 粒子のデータ構造
@@ -38,6 +50,7 @@ layout(std430, binding = 1) buffer EvalResult {
     uint padding[3];
 } result;
 
+// AABB を int の atomic で求めるための固定小数点の倍率 (分解能 0.01)
 const float SCALE = 100.0;
 const int INIT_MAX = 2147483647;  // intの最大値
 const int INIT_MIN = -2147483647; // intの最小値
