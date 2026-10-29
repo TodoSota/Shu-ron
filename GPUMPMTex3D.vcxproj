@@ -135,6 +135,7 @@
     <ClCompile Include="src\render\ShadowMap.cpp" />
     <ClCompile Include="src\render\SsaoPass.cpp" />
     <ClCompile Include="src\render\PassTimer.cpp" />
+    <ClCompile Include="src\render\ScreenSpaceSurface.cpp" />
     <ClCompile Include="src\core\Errorcheck.cpp" />
     <ClCompile Include="ImGui\imgui.cpp" />
     <ClCompile Include="ImGui\imgui_draw.cpp" />
@@ -177,6 +178,9 @@
     <None Include="src\render\shaders\ssao.frag" />
     <None Include="src\render\shaders\ssao_blur.frag" />
     <None Include="src\render\shaders\lighting.frag" />
+    <None Include="src\render\shaders\smooth_depth.frag" />
+    <None Include="src\render\shaders\normal_from_depth.frag" />
+    <None Include="src\render\shaders\surface_composite.frag" />
     <None Include="legacy\setup.comp" />
     <None Include="legacy\update.comp" />
   </ItemGroup>
@@ -191,6 +195,7 @@
     <ClInclude Include="src\render\SsaoPass.h" />
     <ClInclude Include="src\render\PassTimer.h" />
     <ClInclude Include="src\render\RenderSettings.h" />
+    <ClInclude Include="src\render\ScreenSpaceSurface.h" />
     <ClInclude Include="src\core\Camera.h" />
     <ClInclude Include="src\core\Errorcheck.h" />
     <ClInclude Include="legacy\Mesh.h" />

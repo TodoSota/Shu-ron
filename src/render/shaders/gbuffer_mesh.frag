@@ -15,6 +15,7 @@ uniform bool twoSided;	// 両面を描く面 (床) なら true
 
 layout(location = 0) out vec4 o_albedo;
 layout(location = 1) out vec4 o_normal;
+layout(location = 2) out float o_linearDepth;	// 粒子ではないので 0 (粒子の手前にある場合は粒子の深度を消す)
 
 void main() {
 	vec3 n = normalize(v_normalView);
@@ -24,4 +25,5 @@ void main() {
 	if (twoSided && dot(n, -v_positionView) < 0.0) n = -n;
 	o_albedo = vec4(albedo, kind);
 	o_normal = vec4(n, 0.0);
+	o_linearDepth = 0.0;
 }

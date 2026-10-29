@@ -17,6 +17,7 @@
 #include <vector>
 #include <string>
 #include <iostream>
+#include <cmath>
 
 #include "../tiny_obj_loader/tiny_obj_loader.h"
 
@@ -45,11 +46,16 @@ public:
 
     /// コンストラクタ
     /// @param[in] objFilePath 読み込むオブジェクトファイルへのパス(.vcxprojのある場所から相対パスで)
+    /// @note ファイルが読めない場合は、代わりに半径 0.5 の球を作る (障害物の機能をそのまま試せるようにするため)
     MeshResource(const std::string& objFilePath) {
-        if (loadOBJ(objFilePath)) {
-            setupMesh();
-            calculateAABB();
+        if (!loadOBJ(objFilePath)) {
+            std::cerr << "OBJ file not found: " << objFilePath << " -> using a built-in sphere instead." << std::endl;
+            vertices.clear();
+            indices.clear();
+            createSphere(0.5f, 24, 32);
         }
+        setupMesh();
+        calculateAABB();
     }
 
     /// SDF の生成 + 各ボクセルからメッシュへの最短距離の計算 | ※呼び出しは一回だけ！
@@ -182,6 +188,35 @@ private:
             }
         }
         return true;
+    }
+
+    /// 代わりの形状として、原点中心の UV 球を作る (loadOBJ と同じく、頂点を共有しない三角形の並びにする)
+    /// @param[in] radius 半径
+    /// @param[in] stacks 緯度方向の分割数
+    /// @param[in] slices 経度方向の分割数
+    void createSphere(float radius, int stacks, int slices) {
+        const float pi = 3.14159265358979f;
+        auto point = [&](int i, int j) {
+            const float theta = pi * static_cast<float>(i) / stacks;            // 北極からの角度
+            const float phi = 2.0f * pi * static_cast<float>(j) / slices;      // 経度
+            const glm::vec3 n(std::sin(theta) * std::cos(phi), std::cos(theta), std::sin(theta) * std::sin(phi));
+            return SDFVertex{ n * radius, n };
+        };
+        for (int i = 0; i < stacks; ++i) {
+            for (int j = 0; j < slices; ++j) {
+                const SDFVertex a = point(i, j), b = point(i, j + 1), c = point(i + 1, j), d = point(i + 1, j + 1);
+                // 外側から見て反時計回り (表面) になる順。極では面積 0 の三角形になるので出力しない
+                // (SDF の内外判定で法線が NaN になるのを防ぐ)
+                auto emit = [&](const SDFVertex& p0, const SDFVertex& p1, const SDFVertex& p2) {
+                    for (const SDFVertex& v : { p0, p1, p2 }) {
+                        vertices.push_back(v);
+                        indices.push_back(static_cast<GLuint>(indices.size()));
+                    }
+                };
+                if (i > 0) emit(a, b, c);              // 北極の行では a と b が同じ点
+                if (i < stacks - 1) emit(c, b, d);     // 南極の行では c と d が同じ点
+            }
+        }
     }
 
     /// 読み込んだメッシュに対して GPU バッファ生成

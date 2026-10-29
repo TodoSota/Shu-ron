@@ -9,6 +9,7 @@
 //   Points  : 従来の点描画 (drawFloor / drawObstacle / drawMpm)
 //   Spheres : drawScene() による deferred shading
 //             (A) シャドウマップ → (B) G-buffer → (F) SSAO → (G) 陰影の計算
+//   Surface : Spheres の (B) と (F) の間に、粒子の面を張る処理 (D)(E) を入れる
 //             (パスの名前は docs/rendering_guide.md の図に対応する)
 //==============================================================================
 
@@ -22,6 +23,7 @@
 #include "RenderTarget.h"
 #include "ShadowMap.h"
 #include "SsaoPass.h"
+#include "ScreenSpaceSurface.h"
 #include "PassTimer.h"
 
 // 前方宣言
@@ -64,9 +66,10 @@ private:
     GLuint emptyVAO{ 0 };           // 全画面の三角形用 (頂点属性なし)
     GLuint floorQuadVAO{ 0 }, floorQuadVBO{ 0 };    // 床の四角形 (位置 + 法線)
 
-    RenderTarget gbuffer;           // location 0: albedo + 種別 (RGBA8), 1: 法線 (RGBA16F), 深度 (D32F)
+    RenderTarget gbuffer;           // location 0: albedo + 種別 (RGBA8), 1: 法線 (RGBA16F), 2: 粒子の線形深度 (R32F), 深度 (D32F)
     ShadowMap shadowMap;
     std::unique_ptr<SsaoPass> ssao;
+    std::unique_ptr<ScreenSpaceSurface> surface;
     PassTimer timer;
     float worldScale{ 1.0f };
 
@@ -78,6 +81,7 @@ private:
 
     // --- Spheres モードの描画ヘルパー ---
     void drawSpheres(const MpmObject& mpmObject, const glm::mat4& view, const glm::mat4& projection, float viewportHeight, bool useDebugColor);
+    float drawRadius() const;       // 現在のモードでの球の描画半径 [m]
     void updateFloorQuad(const MpmPhysics& physics);
     void drawMeshTo(GLuint program, const SdfInstance& obstacle, const glm::mat4& view, const glm::mat4& projection);
 public:
@@ -111,7 +115,7 @@ public:
     // スイング軌道・予測ベクトルの描画
     void drawPreview(const glm::mat4& view, const glm::mat4& projection, const glm::mat4& model, const std::vector<glm::vec3>& previewPoints);
 
-    /// 陰影付きでシーン (床・障害物・粒子) を描く (Spheres モード)
+    /// 陰影付きでシーン (床・障害物・粒子) を描く (Spheres / Surface モード)
     /// 画面 (既定のフレームバッファ) に色と深度を書くので、この後に枠線などを重ねて描ける
     /// @param[in] framebufferWidth, framebufferHeight 画面のフレームバッファの大きさ [px]
     void drawScene(const MpmObject& mpmObject, const SdfInstance& obstacle, const MpmPhysics& physics,

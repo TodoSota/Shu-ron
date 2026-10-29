@@ -246,6 +246,7 @@ void Renderer::initDeferred() {
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
     ssao = std::make_unique<SsaoPass>();
+    surface = std::make_unique<ScreenSpaceSurface>();
 }
 
 // 床の平面 n·x = h 上に、領域を十分に覆う四角形を置く
@@ -272,12 +273,18 @@ void Renderer::updateFloorQuad(const MpmPhysics& physics) {
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
+// 現在のモードでの球の描画半径 (Surface モードでは、すき間を埋めるため大きくする)
+float Renderer::drawRadius() const {
+    const float r = settings.particleRadius();
+    return (settings.mode == RenderMode::Surface) ? r * settings.surfaceRadiusBoost : r;
+}
+
 // 粒子を球インポスタで描く (G-buffer とシャドウマップの両方で使う)
 void Renderer::drawSpheres(const MpmObject& mpmObject, const glm::mat4& view, const glm::mat4& projection, float viewportHeight, bool useDebugColor) {
     glUseProgram(sphereProgram);
     setMat4(sphereProgram, "view", view);
     setMat4(sphereProgram, "projection", projection);
-    setFloat(sphereProgram, "pointRadius", settings.particleRadius());
+    setFloat(sphereProgram, "pointRadius", drawRadius());
     setFloat(sphereProgram, "viewportHeight", viewportHeight);
     setVec3(sphereProgram, "sandColor", settings.sandColor);
     setVec3(sphereProgram, "stoneColor", settings.stoneColor);
@@ -321,6 +328,7 @@ void Renderer::drawScene(const MpmObject& mpmObject, const SdfInstance& obstacle
         gbuffer.create(fbWidth, fbHeight, {
             { GL_RGBA8,   GL_RGBA, GL_UNSIGNED_BYTE, GL_NEAREST },	// albedo + 種別
             { GL_RGBA16F, GL_RGBA, GL_FLOAT,         GL_NEAREST },	// ビュー空間の法線
+            { GL_R32F,    GL_RED,  GL_FLOAT,         GL_NEAREST },	// 粒子の線形深度 (0 = 粒子なし)
         }, true);
     }
     else {
@@ -350,7 +358,7 @@ void Renderer::drawScene(const MpmObject& mpmObject, const SdfInstance& obstacle
     // --- (B) G-buffer: カメラから見た色・法線・深度 ---
     timer.begin("G-buffer");
     gbuffer.bind();
-    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);	// 種別 0 = 背景
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);	// 種別 0 = 背景、線形深度 0 = 粒子なし
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     // 床
@@ -379,12 +387,19 @@ void Renderer::drawScene(const MpmObject& mpmObject, const SdfInstance& obstacle
     drawSpheres(mpmObject, view, projection, static_cast<float>(fbHeight), useDebugColor);
     timer.end();
 
+    // --- (D)(E) Surface モード: 粒子の深度を平滑化して面を張り、G-buffer の法線と深度を置き換える ---
+    if (settings.mode == RenderMode::Surface) {
+        timer.begin("Surface");
+        surface->run(gbuffer, projection, view, drawRadius(), settings, emptyVAO);
+        timer.end();
+    }
+
     // --- (F) SSAO ---
     GLuint aoTex = 0;
     if (settings.ssao) {
         timer.begin("SSAO");
         aoTex = ssao->run(gbuffer.depthTexture(), gbuffer.colorTexture(1), fbWidth, fbHeight,
-            projection, settings.ssaoRadiusScale * settings.particleRadius(), settings, emptyVAO);
+            projection, settings.ssaoRadiusScale * drawRadius(), settings, emptyVAO);
         timer.end();
     }
 
@@ -417,7 +432,10 @@ void Renderer::drawScene(const MpmObject& mpmObject, const SdfInstance& obstacle
     setInt(lightingProgram, "useShadow", (settings.shadows && shadowMap.depthTexture() != 0) ? 1 : 0);
     setInt(lightingProgram, "useAO", (settings.ssao && aoTex != 0) ? 1 : 0);
     setFloat(lightingProgram, "shadowBias", settings.shadowBias);
-    setFloat(lightingProgram, "shadowNormalOffset", settings.shadowNormalOffset);
+    // Surface モードでは、平滑化した面が球の頂点より低くなり、シャドウマップ上の球に自分で影を
+    // 落としてしまう (谷が黒い斑点になる)。そのため、参照位置を描画半径の分だけ法線方向へずらす
+    const float normalOffset = settings.shadowNormalOffset + ((settings.mode == RenderMode::Surface) ? drawRadius() : 0.0f);
+    setFloat(lightingProgram, "shadowNormalOffset", normalOffset);
     setInt(lightingProgram, "debugView", settings.debugView);
     glBindVertexArray(emptyVAO);
     glDrawArrays(GL_TRIANGLES, 0, 3);
@@ -436,9 +454,19 @@ void Renderer::drawSettingsUi() {
 
     int mode = static_cast<int>(settings.mode);
     ImGui::RadioButton("Points", &mode, 0); ImGui::SameLine();
-    ImGui::RadioButton("Spheres (shaded)", &mode, 1);
+    ImGui::RadioButton("Spheres", &mode, 1); ImGui::SameLine();
+    ImGui::RadioButton("Surface", &mode, 2);
     settings.mode = static_cast<RenderMode>(mode);
     if (settings.mode == RenderMode::Points) return;
+
+    if (settings.mode == RenderMode::Surface) {
+        // 面を張る処理の調整 (平滑化を強くすると滑らかに、弱くすると粒状になる)
+        ImGui::SliderFloat("Surface radius boost", &settings.surfaceRadiusBoost, 1.0f, 2.5f);
+        ImGui::SliderFloat("Smooth radius", &settings.smoothRadiusScale, 0.5f, 8.0f);
+        ImGui::SliderInt("Smooth iterations", &settings.smoothIterations, 0, 4);
+        ImGui::SliderFloat("Grain", &settings.grainStrength, 0.0f, 1.0f);
+        ImGui::SliderFloat("Sphere normal mix", &settings.sphereNormalMix, 0.0f, 1.0f);
+    }
 
     ImGui::SliderFloat("Radius scale", &settings.radiusScale, 0.5f, 3.0f);
     ImGui::Text("Particle radius: %.2f mm", settings.particleRadius() * 1000.0f);
@@ -458,6 +486,8 @@ void Renderer::drawSettingsUi() {
         ImGui::SliderFloat("Shadow normal offset", &settings.shadowNormalOffset, 0.0f, 0.02f, "%.4f");
         int resIndex = (settings.shadowResolution >= 2048) ? 1 : 0;
         if (ImGui::Combo("Shadow map", &resIndex, "1024\0" "2048\0")) settings.shadowResolution = resIndex ? 2048 : 1024;
+        ImGui::SliderFloat("Smooth depth threshold", &settings.smoothDepthScale, 0.5f, 6.0f);
+        ImGui::SliderFloat("Grain size", &settings.grainScale, 0.25f, 4.0f);
         ImGui::Combo("Debug view", &settings.debugView, "Final\0" "Albedo\0" "Normal\0" "AO\0" "Shadow\0");
         ImGui::TreePop();
     }

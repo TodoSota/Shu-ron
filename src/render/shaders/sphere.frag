@@ -4,7 +4,8 @@
 // sphere.frag : 点スプライトの中に球を描くフラグメントシェーダー (球インポスタ)
 // 目的: 正方形の点スプライトのうち円の内側だけを残し、球面の法線と正しい深度を書く。
 //       深度を球面に合わせることで、粒子どうしや障害物との前後関係が正しくなる。
-//       G-buffer への出力: location 0 = albedo (rgb) と種別 (a)、location 1 = ビュー空間の法線。
+//       G-buffer への出力: location 0 = albedo (rgb) と種別 (a)、location 1 = ビュー空間の法線、
+//       location 2 = 線形深度 (Surface モードの平滑化で使う)。
 //       シャドウマップのパス (カラー出力なし) では、深度だけが使われる。
 //==============================================================================
 
@@ -22,6 +23,7 @@ uniform bool useDebugColor;
 
 layout(location = 0) out vec4 o_albedo;	// rgb: 色 (線形), a: 種別 (0.25 = 粒子)
 layout(location = 1) out vec4 o_normal;	// xyz: ビュー空間の法線
+layout(location = 2) out float o_linearDepth;	// -z_view [m] (> 0 なら粒子の画素)
 
 // 整数のハッシュ (粒子番号から再現性のある乱数を作る)
 float hash(uint x) {
@@ -65,4 +67,5 @@ void main() {
 
 	o_albedo = vec4(clamp(albedo, 0.0, 1.0), 0.25);
 	o_normal = vec4(n, 0.0);
+	o_linearDepth = -pos.z;
 }

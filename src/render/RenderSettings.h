@@ -14,6 +14,7 @@
 enum class RenderMode : int {
 	Points = 0,		// 従来の点描画 (陰影なし。state のデバッグ色の確認用)
 	Spheres = 1,	// 球インポスタ + 陰影 + 影 + AO (段階 1)
+	Surface = 2,	// 粒子の深度を平滑化して連続した面にする (段階 2)。陰影・影・AO は段階 1 と共通
 };
 
 struct RenderSettings {
@@ -25,7 +26,7 @@ struct RenderSettings {
 
 	// --- 色 (線形色空間) ---
 	glm::vec3 sandColor{ 0.40f, 0.27f, 0.15f };
-	glm::vec3 stoneColor{ 0.26f, 0.25f, 0.24f };
+	glm::vec3 stoneColor{ 0.25f, 0.23f, 0.21f };
 	glm::vec3 floorColor{ 0.16f, 0.13f, 0.10f };
 	glm::vec3 obstacleColor{ 0.55f, 0.62f, 0.70f };
 	float colorVariation{ 0.12f };		// 粒子ごとの明るさのばらつき (±)
@@ -51,6 +52,15 @@ struct RenderSettings {
 	float ssaoRadiusScale{ 4.0f };		// AO のサンプル半径 = ssaoRadiusScale × 描画半径
 	float ssaoBias{ 0.002f };			// [m]
 	float ssaoPower{ 2.0f };			// AO の効き具合 (大きいほど暗くなる)
+
+	// --- スクリーン空間で面を張る (Surface モード) ---
+	float surfaceRadiusBoost{ 1.4f };	// Surface モードでは球をこの倍率で大きく描き、粒子のすき間を埋める
+	float smoothRadiusScale{ 3.0f };	// 平滑化の半径 = smoothRadiusScale × 描画半径 (ワールド単位)
+	int smoothIterations{ 2 };			// 平滑化の回数 (横 + 縦で 1 回)
+	float smoothDepthScale{ 2.0f };		// これ以上深度が違う画素は混ぜない = smoothDepthScale × 描画半径
+	float sphereNormalMix{ 0.15f };		// 平滑化前の球の法線を混ぜる割合 (粒状感を残す)
+	float grainStrength{ 0.3f };		// ノイズによる細かい凹凸の強さ
+	float grainScale{ 1.0f };			// 凹凸の大きさ = grainScale × 描画半径
 
 	// --- デバッグ表示 ---
 	int debugView{ 0 };					// 0: 通常, 1: albedo, 2: 法線, 3: AO, 4: 影

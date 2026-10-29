@@ -66,6 +66,9 @@
     <ClCompile Include="src\render\PassTimer.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
+    <ClCompile Include="src\render\ScreenSpaceSurface.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
     <ClCompile Include="src\controller\InteractionController.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
@@ -118,6 +121,15 @@
       <Filter>シェーダーファイル</Filter>
     </None>
     <None Include="src\render\shaders\lighting.frag">
+      <Filter>シェーダーファイル</Filter>
+    </None>
+    <None Include="src\render\shaders\smooth_depth.frag">
+      <Filter>シェーダーファイル</Filter>
+    </None>
+    <None Include="src\render\shaders\normal_from_depth.frag">
+      <Filter>シェーダーファイル</Filter>
+    </None>
+    <None Include="src\render\shaders\surface_composite.frag">
       <Filter>シェーダーファイル</Filter>
     </None>
     <None Include="legacy\setup.comp">
@@ -200,6 +212,9 @@
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
     <ClInclude Include="src\render\RenderSettings.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="src\render\ScreenSpaceSurface.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
     <ClInclude Include="src\mpm\MpmPhysics.h">
