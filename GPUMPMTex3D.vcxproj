@@ -131,6 +131,10 @@
     <ClCompile Include="src\mpm\MpmObject.cpp" />
     <ClCompile Include="src\controller\InteractionController.cpp" />
     <ClCompile Include="src\render\Renderer.cpp" />
+    <ClCompile Include="src\render\RenderTarget.cpp" />
+    <ClCompile Include="src\render\ShadowMap.cpp" />
+    <ClCompile Include="src\render\SsaoPass.cpp" />
+    <ClCompile Include="src\render\PassTimer.cpp" />
     <ClCompile Include="src\core\Errorcheck.cpp" />
     <ClCompile Include="ImGui\imgui.cpp" />
     <ClCompile Include="ImGui\imgui_draw.cpp" />
@@ -164,6 +168,15 @@
     <None Include="src\render\mesh.vert" />
     <None Include="src\render\point.frag" />
     <None Include="src\render\point.vert" />
+    <None Include="src\render\shaders\fullscreen.vert" />
+    <None Include="src\render\shaders\sphere.vert" />
+    <None Include="src\render\shaders\sphere.frag" />
+    <None Include="src\render\shaders\gbuffer_mesh.vert" />
+    <None Include="src\render\shaders\gbuffer_mesh.frag" />
+    <None Include="src\render\shaders\depth_only.frag" />
+    <None Include="src\render\shaders\ssao.frag" />
+    <None Include="src\render\shaders\ssao_blur.frag" />
+    <None Include="src\render\shaders\lighting.frag" />
     <None Include="legacy\setup.comp" />
     <None Include="legacy\update.comp" />
   </ItemGroup>
@@ -173,6 +186,11 @@
     <ClInclude Include="src\controller\InteractionController.h" />
     <ClInclude Include="src\mpm\MpmPhysics.h" />
     <ClInclude Include="src\render\Renderer.h" />
+    <ClInclude Include="src\render\RenderTarget.h" />
+    <ClInclude Include="src\render\ShadowMap.h" />
+    <ClInclude Include="src\render\SsaoPass.h" />
+    <ClInclude Include="src\render\PassTimer.h" />
+    <ClInclude Include="src\render\RenderSettings.h" />
     <ClInclude Include="src\core\Camera.h" />
     <ClInclude Include="src\core\Errorcheck.h" />
     <ClInclude Include="legacy\Mesh.h" />

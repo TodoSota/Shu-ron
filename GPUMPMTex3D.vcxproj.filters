@@ -54,6 +54,18 @@
     <ClCompile Include="src\render\Renderer.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
+    <ClCompile Include="src\render\RenderTarget.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="src\render\ShadowMap.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="src\render\SsaoPass.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="src\render\PassTimer.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
     <ClCompile Include="src\controller\InteractionController.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
@@ -79,6 +91,33 @@
       <Filter>シェーダーファイル</Filter>
     </None>
     <None Include="src\render\point.vert">
+      <Filter>シェーダーファイル</Filter>
+    </None>
+    <None Include="src\render\shaders\fullscreen.vert">
+      <Filter>シェーダーファイル</Filter>
+    </None>
+    <None Include="src\render\shaders\sphere.vert">
+      <Filter>シェーダーファイル</Filter>
+    </None>
+    <None Include="src\render\shaders\sphere.frag">
+      <Filter>シェーダーファイル</Filter>
+    </None>
+    <None Include="src\render\shaders\gbuffer_mesh.vert">
+      <Filter>シェーダーファイル</Filter>
+    </None>
+    <None Include="src\render\shaders\gbuffer_mesh.frag">
+      <Filter>シェーダーファイル</Filter>
+    </None>
+    <None Include="src\render\shaders\depth_only.frag">
+      <Filter>シェーダーファイル</Filter>
+    </None>
+    <None Include="src\render\shaders\ssao.frag">
+      <Filter>シェーダーファイル</Filter>
+    </None>
+    <None Include="src\render\shaders\ssao_blur.frag">
+      <Filter>シェーダーファイル</Filter>
+    </None>
+    <None Include="src\render\shaders\lighting.frag">
       <Filter>シェーダーファイル</Filter>
     </None>
     <None Include="legacy\setup.comp">
@@ -146,6 +185,21 @@
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
     <ClInclude Include="src\render\Renderer.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="src\render\RenderTarget.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="src\render\ShadowMap.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="src\render\SsaoPass.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="src\render\PassTimer.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="src\render\RenderSettings.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
     <ClInclude Include="src\mpm\MpmPhysics.h">
