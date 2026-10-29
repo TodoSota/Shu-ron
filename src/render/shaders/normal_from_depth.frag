@@ -4,7 +4,10 @@
 // normal_from_depth.frag : 平滑化した深度から面の法線を再構成する
 // 目的: 平滑化した深度から各画素のビュー座標を復元し、隣の画素との差分の外積で
 //       面の法線を求める。輪郭で法線が乱れないように、左右 (上下) の差分のうち
-//       深度の差が小さいほうを使う。
+//       深度の差が小さいほうを使う。さらに、深度の差が「この画素の大きさで面として
+//       ありうる範囲」を超える場合は、その差分を使わない。両側とも使えない画素
+//       (平滑化後も深度が階段状に残った段差など) では、平滑化前の球の法線を使う。
+//       (段差の画素で差分から法線を作ると、下向きの法線になって黒い線やちらつきになる)
 //       さらに、平滑化で消えた粒状感を戻すため、
 //         ・平滑化前の球の法線を少し混ぜる
 //         ・ワールド座標の 3D ノイズの勾配で法線を少し揺らす (細かい凹凸)
@@ -20,6 +23,10 @@ uniform mat4 invView;
 uniform float sphereNormalMix;
 uniform float grainStrength;
 uniform float grainSize;		// 凹凸の大きさ [m]
+uniform float depthThreshold;	// 平滑化と同じ深度の閾値 [m]
+uniform float pixelsPerMeter;	// 深度 1 m で 1 m が何ピクセルか
+
+const float slopeFactor = 5.0;	// smooth_depth.frag と同じ、面の傾きの許容量
 
 ivec2 size;
 
@@ -57,19 +64,25 @@ void main() {
 	float zu = texelFetch(smoothDepth, min(p + ivec2(0, 1), size - 1), 0).r;
 	float zd = texelFetch(smoothDepth, max(p - ivec2(0, 1), ivec2(0)), 0).r;
 
+	// 隣の画素との深度差として許す上限。1 画素離れた面でありうる差 (傾きを含む) に、
+	// 平滑化で残る誤差の分として閾値の半分を加える
+	float limit = 0.5 * depthThreshold + (z / pixelsPerMeter) * slopeFactor;
+	// 各側の深度差 (粒子がない、または上限を超える側は使わない = 大きな値にする)
+	const float BIG = 1e9;
+	float dr = (zr > 0.0 && abs(zr - z) <= limit) ? abs(zr - z) : BIG;
+	float dl = (zl > 0.0 && abs(z - zl) <= limit) ? abs(z - zl) : BIG;
+	float du = (zu > 0.0 && abs(zu - z) <= limit) ? abs(zu - z) : BIG;
+	float dd = (zd > 0.0 && abs(z - zd) <= limit) ? abs(z - zd) : BIG;
+
 	vec3 n;
-	bool hasX = (zr > 0.0) || (zl > 0.0);
-	bool hasY = (zu > 0.0) || (zd > 0.0);
-	if (hasX && hasY) {
+	if (min(dr, dl) < BIG && min(du, dd) < BIG) {
 		// 深度の差が小さいほうの差分を使う (輪郭の向こう側の面を拾わないため)
-		vec3 dx = (zl <= 0.0 || (zr > 0.0 && abs(zr - z) < abs(z - zl)))
-			? viewPos(p + ivec2(1, 0), zr) - P : P - viewPos(p - ivec2(1, 0), zl);
-		vec3 dy = (zd <= 0.0 || (zu > 0.0 && abs(zu - z) < abs(z - zd)))
-			? viewPos(p + ivec2(0, 1), zu) - P : P - viewPos(p - ivec2(0, 1), zd);
+		vec3 dx = (dr <= dl) ? viewPos(p + ivec2(1, 0), zr) - P : P - viewPos(p - ivec2(1, 0), zl);
+		vec3 dy = (du <= dd) ? viewPos(p + ivec2(0, 1), zu) - P : P - viewPos(p - ivec2(0, 1), zd);
 		n = normalize(cross(dx, dy));
 		if (n.z < 0.0) n = -n;	// 視点の側 (+z) を向ける
 	} else {
-		n = sphereN;			// 孤立した粒子は球の法線のまま
+		n = sphereN;			// 段差や孤立した粒子では、平滑化前の球の法線を使う
 	}
 
 	// 平滑化前の球の法線を混ぜて、粒の輪郭を少し残す

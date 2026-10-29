@@ -1,15 +1,20 @@
 #version 430 core
 
 //==============================================================================
-// smooth_depth.frag : 粒子の線形深度の平滑化 (1 方向分のバイラテラルフィルタ)
+// smooth_depth.frag : 粒子の線形深度の平滑化 (1 方向分。narrow-range 方式のバイラテラルフィルタ)
 // 目的: 球インポスタの凹凸を画面上でならし、連続した面の深度にする。
 //       横方向と縦方向に分けて 2 回描くことで、計算量を抑える。
 //   ・平滑化の半径はワールド単位で決め、深度に応じてピクセル数に換算する
 //     (遠くの面ほど画面上の半径が小さくなるので、どの距離でも同じ粗さの面になる)
-//   ・深度の差が閾値を超える画素は混ぜない (手前の砂山と奥の砂山を混ぜないため)。
-//     斜めから見た面では、画面上で離れるほど深度が大きく変わるので、閾値を
-//     「depthThreshold + 離れた画素数 × 画素の大きさ × slopeFactor」として、
-//     傾いた面でも平滑化が効くようにする (固定の閾値だと縦方向だけ平滑化されず、筋が出る)
+//   ・中心の深度のまわりに「範囲」を決め、範囲外のサンプルを次のように扱う
+//     (Truong & Yuksel 2018 の narrow-range filter の考え方):
+//       - 範囲より奥のサンプル: 捨てずに、範囲の端の深度に丸めて使う
+//       - 範囲より手前のサンプル: 別の物体 (手前の砂山) とみなして使わない
+//     奥のサンプルを捨てると、斜めから見た面で縦方向の平滑化がほとんど効かず、
+//     深度が階段状に残る (黒い横線やちらつきの原因になる)。丸めて使うことで、
+//     階段をならしつつ、背景に向かって面が引っ張られる量も範囲内に抑えられる。
+//   ・範囲の幅は「depthThreshold + 離れた画素数 × 画素の大きさ × slopeFactor」とし、
+//     傾いた面ほど広くする
 //   ・線形深度 0 は「粒子がない画素」を表し、平均に含めない
 //==============================================================================
 
@@ -22,7 +27,7 @@ uniform float pixelsPerMeter;	// 深度 1 m で 1 m が何ピクセルか
 uniform float depthThreshold;	// [m]
 
 const int kMaxRadius = 24;		// 画面上の半径の上限 [px] (近づいたときの計算量を抑える)
-const float slopeFactor = 5.0;	// 許容する面の傾き (視線に対して約 80° まで)
+const float slopeFactor = 5.0;	// 範囲の幅に加える、面の傾きの許容量
 
 void main() {
 	ivec2 size = textureSize(depthTex, 0);
@@ -40,11 +45,11 @@ void main() {
 		ivec2 q = clamp(p + direction * i, ivec2(0), size - 1);
 		float zi = texelFetch(depthTex, q, 0).r;
 		if (zi <= 0.0) continue;					// 粒子がない画素
+		float range = depthThreshold + float(abs(i)) * pixelSize * slopeFactor;
 		float dz = zi - z;
-		float threshold = depthThreshold + float(abs(i)) * pixelSize * slopeFactor;
-		if (abs(dz) > threshold) continue;		// 別の面
-		float sigmaZ = 0.5 * threshold;
-		float w = exp(-0.5 * float(i * i) / (sigma * sigma)) * exp(-0.5 * dz * dz / (sigmaZ * sigmaZ));
+		if (dz < -range) continue;					// 範囲より手前: 別の物体なので使わない
+		zi = min(zi, z + range);					// 範囲より奥: 範囲の端に丸める
+		float w = exp(-0.5 * float(i * i) / (sigma * sigma));
 		sum += zi * w;
 		wsum += w;
 	}

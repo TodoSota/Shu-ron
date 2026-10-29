@@ -78,6 +78,8 @@ void ScreenSpaceSurface::run(const RenderTarget& gbuffer, const glm::mat4& proje
 	glUniform1f(glGetUniformLocation(normalProgram, "sphereNormalMix"), settings.sphereNormalMix);
 	glUniform1f(glGetUniformLocation(normalProgram, "grainStrength"), settings.grainStrength);
 	glUniform1f(glGetUniformLocation(normalProgram, "grainSize"), settings.grainScale * particleRadius);
+	glUniform1f(glGetUniformLocation(normalProgram, "depthThreshold"), settings.smoothDepthScale * particleRadius);
+	glUniform1f(glGetUniformLocation(normalProgram, "pixelsPerMeter"), projection[1][1] * h * 0.5f);
 	glDrawArrays(GL_TRIANGLES, 0, 3);
 
 	// --- (E') G-buffer への書き戻し: 粒子の画素だけ、法線 (location 1) と深度を置き換える ---
