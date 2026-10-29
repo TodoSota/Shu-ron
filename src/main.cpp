@@ -29,6 +29,7 @@
 #include <iostream>
 #include <random>
 #include <memory>
+#include <cmath>
 
 // GLM関連
 #include <GLM/gtc/type_ptr.hpp>
@@ -47,6 +48,12 @@ const float kWorldScale = 1.5f;
 //   ※ 履歴は GPU 上に 粒子数 × 192 バイト × maxFrames だけ確保される
 //     (10,000 粒子で約 1.15 GB、100,000 粒子では約 11.5 GB になり確保できない可能性が高い)
 const int maxFrames = 600;
+
+// 粒子 1 個が占める立方体の一辺 (V_init / N)^(1/3) [m] (描画半径の基準)
+//   MpmSimulator::resetParticles は、一辺 0.2 × kWorldScale × particleScale の立方体に粒子を置く
+float particleSpacing(float particleScale, int particleCount) {
+	return kWorldScale * 0.2f * particleScale / std::cbrt(static_cast<float>(particleCount));
+}
 
 // mpmSimParam の再設定
 //   目的: 格子解像度を変えて再起動するときに、dx に依存するパラメータ (dx, 1/dx, 粒子体積・質量・半径) を計算し直す。
@@ -89,7 +96,7 @@ auto main() -> int {
 	atexit(glfwTerminate);
 
 	// ウィンドウを作成
-	Window window;
+	Window window(1280, 720, "MPM Simulator");
 
 	// 作成失敗すれば
 	if (window.get() == nullptr) {
@@ -244,6 +251,7 @@ auto main() -> int {
 	auto timeline = std::make_unique< TimelineManager>(maxFrames, currentParticleCount, 1);
 	// 画面描画クラスのインスタンス生成
 	Renderer renderer(kWorldScale);
+	renderer.settings.particleSpacing = particleSpacing(particleScale, currentParticleCount);
 	// プレイヤー操作処理のインスタンス生成
 	InteractionController controller;
 	// 描画空間におけるカメラ生成
@@ -301,6 +309,8 @@ auto main() -> int {
 				mpmSimulator->setPhysics(mpmSimParam);
 				mpmSimulator->step(obstacle);		// *** 計算の主体 ***
 			}
+			// 粉塵を、このフレームで進めたシミュレーション時間だけ進める
+			renderer.updateDust(mpmSimulator->getMpmObject(), mpmSimParam, mpmSimParam.timestep * subSteps);
 			// コマ送り要求完了のためリセット
 			stepFrame = false;
 			// シミュレーション状況をタイムラインへ記録 (サブステップごとではなく、描画 1 フレームに 1 回)
@@ -319,9 +329,17 @@ auto main() -> int {
 		// --- 描画 ---
 		// 画面の描画
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);// ウィンドウを消去(カラー/デプスバッファを初期状態に)
-		renderer.drawFloor(view,projection,model,mpmSimParam);
-		renderer.drawObstacle(obstacle,view,projection,model);
-		renderer.drawMpm(mpmSimulator->getMpmObject(), view, projection, model, window.getUseDebugColor());
+		if (renderer.usesPointMode()) {
+			// 従来の点描画 (陰影なし)
+			renderer.drawFloor(view,projection,model,mpmSimParam);
+			renderer.drawObstacle(obstacle,view,projection,model);
+			renderer.drawMpm(mpmSimulator->getMpmObject(), view, projection, model, window.getUseDebugColor());
+		}
+		else {
+			// 球インポスタ + 陰影 + 影 + AO (画面の色と深度を書く)
+			const glm::ivec2 fb = window.getFramebufferSize();
+			renderer.drawScene(mpmSimulator->getMpmObject(), obstacle, mpmSimParam, view, projection, fb.x, fb.y, window.getUseDebugColor());
+		}
 		renderer.drawBoundary(view,projection,glm::mat4(1.0f));
 
 		// Swing モードのプレビュー描画
@@ -336,6 +354,9 @@ auto main() -> int {
 		// --- UI (ImGui): 評価・ログ、パラメータ、カメラ、タイムライン、再起動の設定 ---
 #if defined(IMGUI_VERSION)
 		ImGui::Begin("Simulation Control");
+
+		// 描画の設定 (描画モード・光源・影・AO)
+		renderer.drawSettingsUi();
 
 		ImGui::Separator();
 		
@@ -518,12 +539,14 @@ auto main() -> int {
 			// 指定した論理フレームの状態をGPU/CPUに復元
 			//   (読み出し側の粒子バッファだけを上書きする。次の step() はこのバッファから計算を始める)
 			timeline->restoreToFrame(currentPlaybackFrame, mpmSimulator->getMpmObject().getReadVbo(), &obstacle);
+			renderer.clearDust();	// 粉塵の状態は記録していないので、巻き戻したら消す
 		}
 
 		// リスタート
 		if (ImGui::Button("Restart Simulation")) {
 			particleScale = std::cbrt(static_cast<float>(currentParticleCount) / static_cast<float>(baseParticleCount));
 			mpmSimulator->resetParticles(particleScale, false);
+			renderer.clearDust();
 			mpmSimulator->setPhysics(mpmSimParam);
 		}
 
@@ -556,6 +579,8 @@ auto main() -> int {
 			particleScale = std::cbrt(static_cast<float>(currentParticleCount) / static_cast<float>(baseParticleCount));
 			mpmSimParam =  resetMpmSimParam(mpmSimParam, currentGrid);
 			mpmSimulator->resetParticles(particleScale, false);
+			renderer.clearDust();
+			renderer.settings.particleSpacing = particleSpacing(particleScale, currentParticleCount);
 			mpmSimulator->setPhysics(mpmSimParam);
 
 			// 一時停止状態などをリセット

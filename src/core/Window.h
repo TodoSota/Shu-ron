@@ -301,6 +301,14 @@ public:
 		return size;
 	}
 
+	/// フレームバッファの大きさ [px] を取り出す
+	/// @note 高 DPI の画面では、ウィンドウの大きさ (getSize) と異なる。オフスクリーンの描画先はこちらに合わせる
+	glm::ivec2 getFramebufferSize() const {
+		int w, h;
+		glfwGetFramebufferSize(window, &w, &h);
+		return { w, h };
+	}
+
 	/// デバッグカラー表示フラグを取り出す
 	bool getUseDebugColor() const {
 		return useDebugColor;

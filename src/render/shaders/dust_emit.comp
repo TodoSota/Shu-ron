@@ -1,0 +1,86 @@
+#version 430 core
+
+//==============================================================================
+// dust_emit.comp : 砂の粒子から粉塵を発生させる
+// 目的: 速く動いていて、かつ床の近くにある砂の粒子 (着地・崩落・衝突の場所) から、
+//       確率的に粉塵を 1 個ずつ発生させ、リングバッファに書き込む。
+//       自由落下中の砂からは出ないように、床からの高さで制限している。
+//       確率は「粒子番号とフレーム番号のハッシュ」で決めるので、乱数の状態を持たずに済む。
+// 並列化: 1 スレッド = 砂の粒子 1 個。書き込み位置は atomicAdd で決める。
+//==============================================================================
+
+layout(local_size_x = 64) in;
+
+// 砂の粒子 (シミュレーションと同じ構造体。読み出しのみ)
+struct mpmParticle {
+	vec4 position;
+	vec4 velocity;
+	mat4 affineC;
+	mat4 deformation;
+	float alpha;
+	float q;
+	float vc;
+	int state;
+	int scale;
+	int padding[3];
+};
+layout(std430, binding = 0) readonly buffer ParticleBuffer { mpmParticle particle[]; };
+
+// 粉塵: posAge = (位置, 経過時間), velLife = (速度, 寿命)。寿命 0 は空き
+struct Dust { vec4 posAge; vec4 velLife; };
+layout(std430, binding = 2) buffer DustBuffer { Dust dust[]; };
+layout(std430, binding = 3) buffer DustCounter { uint head; };
+
+uniform uint frameIndex;
+uniform float emitRate;			// 条件を満たす粒子が 1 フレームに粉塵を出す確率
+uniform float speedThreshold;	// [m/s]
+uniform float nearFloor;		// [m]
+uniform vec3 floorNormal;
+uniform float floorHeight;
+uniform float lifetime;			// 寿命の平均 [s]
+uniform float jitter;			// 発生位置のばらつき [m]
+
+// 整数ハッシュから [0, 1) の乱数を作る
+uint hashU(uint x) {
+	x ^= x >> 16; x *= 0x7feb352du;
+	x ^= x >> 15; x *= 0x846ca68bu;
+	x ^= x >> 16;
+	return x;
+}
+float rnd(inout uint s) { s = hashU(s); return float(s) / 4294967296.0; }
+
+void main() {
+	uint idx = gl_GlobalInvocationID.x;
+	if (idx >= particle.length()) return;
+
+	vec3 x = particle[idx].position.xyz;
+	vec3 v = particle[idx].velocity.xyz;
+	float speed = length(v);
+
+	// 床からの高さ (法線は正規化されていないこともあるので、ここで正規化する)
+	float nl = max(length(floorNormal), 1e-6);
+	vec3 n = floorNormal / nl;
+	float height = dot(floorNormal, x) / nl - floorHeight / nl;
+
+	// 発生の重み: 速さ (閾値から 2 倍の速さで 0 → 1) × 床に近いこと
+	float w = smoothstep(speedThreshold, 2.0 * speedThreshold, speed) * step(height, nearFloor);
+	uint seed = hashU(idx * 9781u + frameIndex * 6271u + 1u);
+	if (rnd(seed) >= emitRate * w) return;
+
+	// リングバッファの次の位置へ書き込む (満杯なら最も古いものを上書きする)
+	uint slot = atomicAdd(head, 1u) % uint(dust.length());
+
+	// 接平面の 2 方向
+	vec3 t = normalize(abs(n.x) < 0.9 ? cross(n, vec3(1, 0, 0)) : cross(n, vec3(0, 0, 1)));
+	vec3 b = cross(n, t);
+	float a = 6.2831853 * rnd(seed);
+	vec3 side = cos(a) * t + sin(a) * b;
+
+	// 発生位置: 粒子の位置から少しずらす。初速: 砂の速度の一部 + 舞い上がり + 横への広がり
+	vec3 pos = x + jitter * (side * rnd(seed) + n * rnd(seed));
+	vec3 vel = 0.3 * v + n * (0.15 + 0.25 * rnd(seed)) * speed + side * (0.2 * rnd(seed)) * speed;
+	float life = lifetime * (0.5 + rnd(seed));
+
+	dust[slot].posAge = vec4(pos, 0.0);
+	dust[slot].velLife = vec4(vel, life);
+}
