@@ -401,8 +401,17 @@ void Renderer::drawScene(const MpmObject& mpmObject, const SdfInstance& obstacle
     drawMeshTo(gbufferMeshProgram, obstacle, view, projection);
 
     // 粒子
-    drawSpheres(mpmObject, view, projection, static_cast<float>(fbHeight), useDebugColor, splatMode);
+    // Splat モードでは、粒子は (P) で円盤として描く (Splatting を切ると球で描く: 段階 1 の表示)
+    const bool splatting = splatMode && settings.splatting;
+    if (!splatting) drawSpheres(mpmObject, view, projection, static_cast<float>(fbHeight), useDebugColor, splatMode);
     timer.end();
+
+    // --- (P) Splat モード: 表面粒子の円盤を重ねて描き、G-buffer に書き込む ---
+    if (splatting) {
+        timer.begin("Splat");
+        splat->draw(mpmObject, gbuffer, view, projection, useDebugColor, settings, emptyVAO);
+        timer.end();
+    }
 
     // --- (D)(E) Surface モード: 粒子の深度を平滑化して面を張り、G-buffer の法線と深度を置き換える ---
     if (settings.mode == RenderMode::Surface) {
@@ -450,9 +459,12 @@ void Renderer::drawScene(const MpmObject& mpmObject, const SdfInstance& obstacle
     setInt(lightingProgram, "useAO", (settings.ssao && aoTex != 0) ? 1 : 0);
     setFloat(lightingProgram, "shadowBias", settings.shadowBias);
     // Surface モードでは、平滑化した面が球の頂点より低くなり、シャドウマップ上の球に自分で影を
-    // 落としてしまう (谷が黒い斑点になる)。そのため、参照位置を描画半径の分だけ法線方向へずらす
-    const float normalOffset = settings.shadowNormalOffset + ((settings.mode == RenderMode::Surface) ? drawRadius() : 0.0f);
-    setFloat(lightingProgram, "shadowNormalOffset", normalOffset);
+    // 落としてしまう (谷が黒い斑点になる)。そのため、粒子の画素だけ参照位置を法線方向へずらす。
+    // Splat モードの円盤は粒子の中心を通り、さらに重み付き平均で少し奥に下がるので、
+    // 描画半径の 3 倍ずらす (2 倍では斑点が残った)
+    const float particleOffset = (settings.mode == RenderMode::Surface) ? drawRadius() : splatting ? 3.0f * drawRadius() : 0.0f;
+    setFloat(lightingProgram, "shadowNormalOffset", settings.shadowNormalOffset);
+    setFloat(lightingProgram, "particleShadowOffset", particleOffset);
     // Splat モードの surfel のデバッグ色は、陰影を付けずに表示する (Final のときは Albedo 表示に切り替える)
     const bool surfelColors = splatMode && settings.surfelDebug != SurfelDebug::Off;
     setInt(lightingProgram, "debugView", (surfelColors && settings.debugView == 0) ? 1 : settings.debugView);
@@ -506,11 +518,19 @@ void Renderer::drawSettingsUi() {
     }
 
     if (settings.mode == RenderMode::Splat) {
-        // 段階 1: 密度格子による表面粒子の抽出と法線 (密度勾配) の確認
+        // 表面粒子の円盤 (段階 2) と、密度格子による表面粒子の抽出・法線 (段階 1)
+        ImGui::Checkbox("Splatting", &settings.splatting);
+        if (settings.splatting) {
+            ImGui::SliderFloat("Splat radius", &settings.splatRadiusScale, 0.8f, 3.0f);
+            ImGui::SliderFloat("Splat sharpness", &settings.splatSharpness, 0.5f, 6.0f);
+            ImGui::SliderFloat("Splat depth offset", &settings.splatDepthOffsetScale, 0.1f, 1.5f);
+        } else {
+            ImGui::SameLine();
+            ImGui::Checkbox("Hide interior", &settings.hideInterior);
+        }
         int debug = static_cast<int>(settings.surfelDebug);
         ImGui::Combo("Surfel view", &debug, "Off\0" "Surface\0" "Normal\0" "Density\0");
         settings.surfelDebug = static_cast<SurfelDebug>(debug);
-        ImGui::Checkbox("Hide interior", &settings.hideInterior);
         ImGui::SliderFloat("Cell scale", &settings.densityCellScale, 1.0f, 3.0f);
         ImGui::SliderFloat("Density blur", &settings.densityBlurSigma, 0.0f, 3.0f);
         ImGui::SliderFloat("Outside offset", &settings.outsideOffsetScale, 0.5f, 2.0f);

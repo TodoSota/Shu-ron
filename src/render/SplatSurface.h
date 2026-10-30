@@ -11,9 +11,17 @@
 //   S2 density_resolve.comp uint → float の 3D テクスチャ
 //      density_blur.comp    x → y → z の 3 回でガウスぼかし
 //   S3 surfel_prepare.comp  粒子ごとに 表面らしさ・法線・密度 を surfel バッファへ
+// 処理 (draw, deferred splatting [Botsch et al. 2005]):
+//   P1 G-buffer の深度 (床・障害物) を splat 用の深度へコピー
+//   P2 可視性: 表面粒子の円盤を、少し奥へずらした深度で描く (splat.vert/frag, pass 0)
+//   P3 蓄積  : 厚みの内側の円盤の 重み × 色・法線・深度 を加算 (pass 1)
+//   P5 正規化: Σw で割って G-buffer に書く (splat_normalize.frag)
+//   (P4 の半透明の splat 層は段階 3 で加える)
 //==============================================================================
 
 #include <GL/glew.h>
+#include <GLM/glm.hpp>
+#include "RenderTarget.h"
 
 struct RenderSettings;
 struct MpmObject;
@@ -34,6 +42,11 @@ public:
 	/// @param[in] worldScale シミュレーション領域の一辺 [m]
 	void prepare(const MpmObject& mpmObject, float worldScale, const RenderSettings& settings);
 
+	/// 表面粒子を円盤として重ねて描き、G-buffer の色・法線・深度に書き込む (P1〜P5)
+	/// prepare() の後、G-buffer に床と障害物を描いた後に呼ぶ
+	void draw(const MpmObject& mpmObject, const RenderTarget& gbuffer, const glm::mat4& view, const glm::mat4& projection,
+		bool useDebugColor, const RenderSettings& settings, GLuint emptyVao);
+
 	/// surfel バッファ (粒子 1 個あたり vec4 × 2: 法線 + 表面らしさ、密度 + 勾配の強さ)
 	GLuint surfelBuffer() const { return surfels; }
 	/// ぼかし済みの密度の 3D テクスチャ (1 セルあたりの粒子数)
@@ -50,6 +63,10 @@ private:
 	GLuint resolveProgram{ 0 };
 	GLuint blurProgram{ 0 };
 	GLuint surfelProgram{ 0 };
+	GLuint drawProgram{ 0 };		// splat.vert/frag (可視性・蓄積)
+	GLuint normalizeProgram{ 0 };	// splat_normalize.frag
+
+	RenderTarget accumTarget;		// 0: RGBA16F (Σw·色, Σw), 1: RGBA16F (Σw·法線, Σw·あいまいさ), 2: R32F (Σw·深度), 深度 D32F
 
 	GLuint densityBuffer{ 0 };		// 固定小数点の密度 (uint × N³)
 	GLuint densityTex[2]{ 0, 0 };	// float の密度 (R32F の 3D テクスチャ、ぼかしで交互に使う)

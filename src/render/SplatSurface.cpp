@@ -5,12 +5,23 @@
 #include "RenderSettings.h"
 #include "../core/Shader.h"
 #include "../mpm/MpmObject.h"
+#include <GLM/gtc/type_ptr.hpp>
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace {
+	void setMat4(GLuint prog, const char* name, const glm::mat4& m) { glUniformMatrix4fv(glGetUniformLocation(prog, name), 1, GL_FALSE, glm::value_ptr(m)); }
+	void setVec3(GLuint prog, const char* name, const glm::vec3& v) { glUniform3fv(glGetUniformLocation(prog, name), 1, glm::value_ptr(v)); }
 	void setFloat(GLuint prog, const char* name, float v) { glUniform1f(glGetUniformLocation(prog, name), v); }
 	void setInt(GLuint prog, const char* name, int v) { glUniform1i(glGetUniformLocation(prog, name), v); }
+
+	constexpr GLenum kPointSprite = 0x8861;	// 互換プロファイルで gl_PointCoord を使うため (Renderer.cpp と同じ)
+	bool isCompatibilityProfile() {
+		GLint mask = 0;
+		glGetIntegerv(GL_CONTEXT_PROFILE_MASK, &mask);
+		return (mask & GL_CONTEXT_CORE_PROFILE_BIT) == 0;
+	}
 }
 
 SplatSurface::SplatSurface() {
@@ -18,6 +29,8 @@ SplatSurface::SplatSurface() {
 	resolveProgram = loadCompute("src/render/shaders/density_resolve.comp");
 	blurProgram = loadCompute("src/render/shaders/density_blur.comp");
 	surfelProgram = loadCompute("src/render/shaders/surfel_prepare.comp");
+	drawProgram = loadProgram("src/render/shaders/splat.vert", "src/render/shaders/splat.frag");
+	normalizeProgram = loadProgram("src/render/shaders/fullscreen.vert", "src/render/shaders/splat_normalize.frag");
 }
 
 SplatSurface::~SplatSurface() {
@@ -25,6 +38,8 @@ SplatSurface::~SplatSurface() {
 	glDeleteProgram(resolveProgram);
 	glDeleteProgram(blurProgram);
 	glDeleteProgram(surfelProgram);
+	glDeleteProgram(drawProgram);
+	glDeleteProgram(normalizeProgram);
 	if (densityBuffer) glDeleteBuffers(1, &densityBuffer);
 	if (densityTex[0]) glDeleteTextures(2, densityTex);
 	if (surfels) glDeleteBuffers(1, &surfels);
@@ -149,5 +164,104 @@ void SplatSurface::prepare(const MpmObject& mpmObject, float worldScale, const R
 	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
 	glBindTexture(GL_TEXTURE_3D, 0);
+	glUseProgram(0);
+}
+
+void SplatSurface::draw(const MpmObject& mpmObject, const RenderTarget& gbuffer, const glm::mat4& view, const glm::mat4& projection,
+	bool useDebugColor, const RenderSettings& settings, GLuint emptyVao) {
+	if (surfels == 0 || mpmObject.count <= 0) return;
+	const int w = gbuffer.getWidth(), h = gbuffer.getHeight();
+
+	// 蓄積用のターゲット (深度は G-buffer と同じ D32F。P1 でコピーするため形式を揃える)
+	if (accumTarget.framebuffer() == 0) {
+		accumTarget.create(w, h, {
+			{ GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_NEAREST },	// Σw·色, Σw (重み w ≤ 1、重なりは数十枚なので 16F で足りる)
+			{ GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_NEAREST },	// Σw·法線, Σw·あいまいさ
+			{ GL_R32F,    GL_RED,  GL_FLOAT, GL_NEAREST },	// Σw·線形深度 (精度のため 32F)
+		}, true);
+	}
+	else {
+		accumTarget.resize(w, h);
+	}
+
+	// --- P1: G-buffer の深度 (床・障害物) をコピーし、蓄積バッファを 0 にする ---
+	//   G-buffer の深度を直接書き換えないのは、段階 3 で半透明の輪郭の背後にある床の深度を残すため
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, gbuffer.framebuffer());
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, accumTarget.framebuffer());
+	glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+	accumTarget.bind();
+	const GLfloat zero[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+	for (int i = 0; i < 3; ++i) glClearBufferfv(GL_COLOR, i, zero);
+
+	// --- 円盤の描画の準備 ---
+	const float radius = settings.splatRadiusScale * settings.particleSpacing;
+	glUseProgram(drawProgram);
+	setMat4(drawProgram, "view", view);
+	setMat4(drawProgram, "projection", projection);
+	setFloat(drawProgram, "splatRadius", radius);
+	setFloat(drawProgram, "viewportHeight", static_cast<float>(h));
+	glUniform2f(glGetUniformLocation(drawProgram, "viewport"), static_cast<float>(w), static_cast<float>(h));
+	setFloat(drawProgram, "surfaceCutoff", settings.surfaceCutoff);
+	setFloat(drawProgram, "rhoRef", rhoRef);
+	setInt(drawProgram, "surfelDebug", static_cast<int>(settings.surfelDebug));
+	setFloat(drawProgram, "splatSharpness", settings.splatSharpness);
+	setFloat(drawProgram, "depthOffset", settings.splatDepthOffsetScale * radius);
+	setVec3(drawProgram, "sandColor", settings.sandColor);
+	setVec3(drawProgram, "stoneColor", settings.stoneColor);
+	setFloat(drawProgram, "colorVariation", settings.colorVariation);
+	setInt(drawProgram, "useDebugColor", useDebugColor ? 1 : 0);
+
+	const bool compat = isCompatibilityProfile();
+	const GLboolean smoothWasOn = glIsEnabled(GL_POINT_SMOOTH);
+	glEnable(GL_PROGRAM_POINT_SIZE);
+	if (compat) { glEnable(kPointSprite); glDisable(GL_POINT_SMOOTH); }
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mpmObject.getReadVbo());
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, kSurfelBinding, surfels);
+	glBindVertexArray(mpmObject.getRenderVao());
+	glEnable(GL_DEPTH_TEST);
+	glDisable(GL_CULL_FACE);
+
+	// --- P2: 可視性 (深度だけ。奥へずらした深度で、手前の表面の厚みを決める) ---
+	setInt(drawProgram, "pass", 0);
+	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+	glDepthMask(GL_TRUE);
+	glDepthFunc(GL_LESS);
+	glDrawArrays(GL_POINTS, 0, mpmObject.count);
+
+	// --- P3: 蓄積 (厚みの内側の円盤を加算。深度は書かない) ---
+	setInt(drawProgram, "pass", 1);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glDepthMask(GL_FALSE);
+	glDepthFunc(GL_LEQUAL);
+	glEnable(GL_BLEND);
+	glBlendEquation(GL_FUNC_ADD);
+	glBlendFunc(GL_ONE, GL_ONE);
+	glDrawArrays(GL_POINTS, 0, mpmObject.count);
+	glDisable(GL_BLEND);
+	glDepthMask(GL_TRUE);
+
+	glBindVertexArray(0);
+	glDisable(GL_PROGRAM_POINT_SIZE);
+	if (compat) { glDisable(kPointSprite); if (smoothWasOn) glEnable(GL_POINT_SMOOTH); }
+	glEnable(GL_CULL_FACE);
+
+	// --- P5: 正規化して G-buffer へ (床・障害物より手前の画素だけ: GL_LESS) ---
+	gbuffer.bind();
+	glDepthFunc(GL_LESS);
+	glUseProgram(normalizeProgram);
+	for (int i = 0; i < 3; ++i) {
+		glActiveTexture(GL_TEXTURE0 + i);
+		glBindTexture(GL_TEXTURE_2D, accumTarget.colorTexture(i));
+	}
+	setInt(normalizeProgram, "accum0", 0);
+	setInt(normalizeProgram, "accum1", 1);
+	setInt(normalizeProgram, "accum2", 2);
+	setMat4(normalizeProgram, "projection", projection);
+	setFloat(normalizeProgram, "coverageK", settings.coverageK);
+	setFloat(normalizeProgram, "opaqueAlpha", 0.0f);	// 段階 2: 円盤がかかった画素はすべて不透明として書く
+	glBindVertexArray(emptyVao);
+	glDrawArrays(GL_TRIANGLES, 0, 3);
+	glBindVertexArray(0);
+	for (int i = 2; i >= 0; --i) { glActiveTexture(GL_TEXTURE0 + i); glBindTexture(GL_TEXTURE_2D, 0); }
 	glUseProgram(0);
 }

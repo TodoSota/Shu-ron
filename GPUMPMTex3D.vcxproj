@@ -192,6 +192,9 @@
     <None Include="src\render\shaders\density_resolve.comp" />
     <None Include="src\render\shaders\density_blur.comp" />
     <None Include="src\render\shaders\surfel_prepare.comp" />
+    <None Include="src\render\shaders\splat.vert" />
+    <None Include="src\render\shaders\splat.frag" />
+    <None Include="src\render\shaders\splat_normalize.frag" />
     <None Include="legacy\setup.comp" />
     <None Include="legacy\update.comp" />
   </ItemGroup>

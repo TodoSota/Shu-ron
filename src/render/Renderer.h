@@ -11,7 +11,8 @@
 //             (A) シャドウマップ → (B) G-buffer → (F) SSAO → (G) 陰影の計算
 //   Surface : Spheres の (B) と (F) の間に、粒子の面を張る処理 (D)(E) を入れる
 //   Splat   : (A) の前に密度格子で表面粒子と法線を求める (S、SplatSurface)。
-//             段階 1 の現在は、その結果を (B) の球の色で表示する (docs/splat_guide.md)
+//             (B) では粒子を描かず、(B) の後に表面粒子を円盤として重ねて描いて G-buffer に書く (P)
+//             (docs/splat_guide.md。現在は段階 2)
 //   粉塵 (H): Spheres / Surface / Splat モードで、(G) の後に半透明で重ねる (DustSystem)
 //             (パスの名前は docs/rendering_guide.md の図に対応する)
 //==============================================================================

@@ -206,7 +206,9 @@ if (abs(dn) < 0.05) discard;				// 円盤をほぼ真横から見ている
 vec3 x = dir * (dot(v_center, v_normal) / dn);	// 平面との交点
 float u2 = dot(x - v_center, x - v_center) / (splatRadius * splatRadius);
 if (u2 > 1.0) discard;
-float w = v_weight * exp(-splatSharpness * u2);
+float facing = smoothstep(0.05, 0.35, abs(dn));		// 真横に近い円盤は薄くする
+float w = v_weight * exp(-splatSharpness * u2) * facing;
+if (pass == 0 && w < 0.1) discard;				// 重みの小さい部分で手前の深度を決めない
 
 vec3 xd = (pass == 0) ? x + dir * depthOffset : x;	// 可視性パスでは少し奥へずらす
 vec4 clip = projection * vec4(xd, 1.0);
@@ -217,6 +219,11 @@ if (pass == 1) {
 	o_accum2 = -x.z * w;					// R32F:    Σw·線形深度
 }
 ```
+
+段階 2 の実装で、次の 2 点を加えた。
+
+- **可視性パスの重みの下限**: 表面らしさの低い粒子や円盤の縁（重み 0.1 未満）は、可視性パスで深度を書かない。書いてしまうと、ほとんど寄与しない円盤が後ろの円盤を締め出し、その円盤の色だけが縁まで残って、円盤の形がうろこ状に見えた。
+- **横向きの減衰**: 視線と円盤の角度が浅いほど重みを下げる。真横に近い円盤は細い棒になり、薄い膜の縁で筋として目立つためである。
 
 色（albedo）は `sphere.frag` と同じ、材質の基本色 + 粒子番号のハッシュによる明るさのばらつきとする。粒状感はこの色のばらつきで出し、法線には凹凸を加えない。
 
@@ -300,7 +307,9 @@ float ndl = clamp((dot(worldNormal, sunDirection) + wrap) / (1.0 + wrap), 0.0, 1
 
 ### 5.3 影の自己遮蔽
 
-円盤は粒子の中心を通るので、シャドウマップに描いた球（半径 = 描画半径）より低い。Surface モードと同じく自分の球の影に入って斑点になるため、Splat モードでも `shadowNormalOffset` に描画半径を足す（`Renderer::drawScene` の normalOffset の分岐に Splat を加える）。
+円盤は粒子の中心を通り、さらに重み付き平均で少し奥に下がるので、シャドウマップに描いた球（半径 = 描画半径）より低い。そのままでは近くの球の影に入って斑点になる。段階 2 で試した結果、描画半径の 2 倍のずらしでは斑点が残り、3 倍でほぼ消えた。
+
+ただし、すべての画素をずらすと、床の上の飛んでいる粒の影まで消えてしまう。そこで `lighting.frag` に `particleShadowOffset` を加え、**粒子の画素（種別 0.25）だけ** を余分にずらす（Surface モード: 描画半径、Splat モード: 描画半径の 3 倍）。Surface モードも、以前は床を含むすべての画素をずらしていたが、粒子の画素だけに改めた。
 
 ---
 

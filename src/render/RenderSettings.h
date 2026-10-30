@@ -15,8 +15,8 @@ enum class RenderMode : int {
 	Points = 0,		// 従来の点描画 (陰影なし。state のデバッグ色の確認用)
 	Spheres = 1,	// 球インポスタ + 陰影 + 影 + AO (段階 1)
 	Surface = 2,	// 粒子の深度を平滑化して連続した面にする (段階 2)。陰影・影・AO は段階 1 と共通
-	Splat = 3,		// 密度格子で表面粒子と法線を求め、半透明のカーネルで描く (docs/splat_guide.md)。
-					// 現在は段階 1: 表面らしさ・法線・密度を球の色で表示する
+	Splat = 3,		// 密度格子で表面粒子と法線を求め、半透明のカーネルで重ねて描く (docs/splat_guide.md)。
+					// 現在は段階 2: 円盤を不透明に描く (輪郭の半透明は段階 3)
 };
 
 /// Splat モードで球の色に使う値 (段階 1 のデバッグ表示)
@@ -79,8 +79,13 @@ struct RenderSettings {
 	float surfaceLo{ 0.25f };			// 外の密度がこれ以下 (ρ_ref に対する割合) なら表面
 	float surfaceHi{ 0.75f };			// 外の密度がこれ以上なら内部
 	float surfaceCutoff{ 0.02f };		// 表面らしさがこれ未満の粒子は内部として扱う (描かない)
-	SurfelDebug surfelDebug{ SurfelDebug::Surface };	// 段階 1 のデバッグ表示
-	bool hideInterior{ false };			// 内部の粒子を描かない (表面粒子だけを確認する)
+	SurfelDebug surfelDebug{ SurfelDebug::Off };		// 表面らしさ・法線・密度を色で表示する (デバッグ表示)
+	bool splatting{ true };				// 円盤を重ねて描く。false なら球で描く (段階 1 の表示、比較用)
+	bool hideInterior{ false };			// 球で描くとき、内部の粒子を描かない (表面粒子だけを確認する)
+	float splatRadiusScale{ 1.8f };		// 円盤の半径 = splatRadiusScale × particleSpacing
+	float splatSharpness{ 3.0f };		// カーネル exp(-β u²) の β (大きいほど円盤の縁が薄い)
+	float splatDepthOffsetScale{ 0.5f };	// 可視性パスで奥へずらす量 = この値 × 円盤の半径 (混ざり合う厚み)
+	float coverageK{ 2.0f };			// 被覆率 α = 1 - exp(-k Σw) の k (段階 3 で使う)
 
 	// --- 粉塵 (段階 3。Spheres / Surface / Splat モードで描く) ---
 	bool dust{ true };

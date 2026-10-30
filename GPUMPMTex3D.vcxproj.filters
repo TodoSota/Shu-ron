@@ -147,6 +147,15 @@
     <None Include="src\render\shaders\wboit_composite.frag">
       <Filter>シェーダーファイル</Filter>
     </None>
+    <None Include="src\render\shaders\splat.vert">
+      <Filter>シェーダーファイル</Filter>
+    </None>
+    <None Include="src\render\shaders\splat.frag">
+      <Filter>シェーダーファイル</Filter>
+    </None>
+    <None Include="src\render\shaders\splat_normalize.frag">
+      <Filter>シェーダーファイル</Filter>
+    </None>
     <None Include="src\render\shaders\dust_emit.comp">
       <Filter>コンピュートシェーダファイル</Filter>
     </None>

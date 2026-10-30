@@ -35,6 +35,7 @@ uniform bool useShadow;
 uniform bool useAO;
 uniform float shadowBias;
 uniform float shadowNormalOffset;
+uniform float particleShadowOffset;	// 粒子の画素だけに追加するずらし量 [m] (Surface / Splat モード)
 uniform int debugView;			// 0: 通常, 1: albedo, 2: 法線, 3: AO, 4: 影
 
 // ACES のトーンマッピングの近似 (Narkowicz 2015)
@@ -46,9 +47,9 @@ vec3 toDisplay(vec3 linear) {
 }
 
 // 影の係数 (1 = 日なた、0 = 影)。3×3 の PCF で縁をなめらかにする
-float shadowFactor(vec3 worldPos, vec3 worldNormal) {
+float shadowFactor(vec3 worldPos, vec3 worldNormal, float normalOffset) {
 	// 法線方向に少しずらした点で参照し、自己影の縞 (シャドウアクネ) を防ぐ
-	vec4 ls = lightViewProjection * vec4(worldPos + worldNormal * shadowNormalOffset, 1.0);
+	vec4 ls = lightViewProjection * vec4(worldPos + worldNormal * normalOffset, 1.0);
 	vec3 sc = ls.xyz / ls.w * 0.5 + 0.5;
 	if (sc.z > 1.0) return 1.0;
 	vec2 texel = 1.0 / vec2(textureSize(shadowTex, 0));
@@ -83,7 +84,11 @@ void main() {
 
 	// --- 太陽光 (ランバート) と影 ---
 	float ndl = max(dot(worldNormal, sunDirection), 0.0);
-	float shadow = (useShadow && ndl > 0.0) ? shadowFactor(worldPos, worldNormal) : 1.0;
+	// 平らにした粒子の面 (Surface / Splat モード) は、シャドウマップに描いた球より低い位置にあるので、
+	// 粒子の画素 (種別 0.25) だけ参照位置を余分にずらす。床・障害物はずらさず、接地した影を残す
+	bool isParticle = abs(albedoKind.a - 0.25) < 0.1;
+	float normalOffset = shadowNormalOffset + (isParticle ? particleShadowOffset : 0.0);
+	float shadow = (useShadow && ndl > 0.0) ? shadowFactor(worldPos, worldNormal, normalOffset) : 1.0;
 
 	// --- 環境光: 上を向いた面は空の色、下を向いた面は地面の照り返しの色 ---
 	float ao = useAO ? texture(aoTex, v_uv).r : 1.0;
