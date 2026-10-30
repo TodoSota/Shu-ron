@@ -40,7 +40,7 @@ UI の「Rendering」で、描画モードを切り替えられる。
 | Surface | 粒子の深度を平滑化して連続した面にする（段階 2） | 砂のかたまりとしての見た目 |
 | Splat | 密度格子で表面粒子と法線を求め、半透明の円盤を重ねて描く | 土砂のあいまいな見た目（[splat_study.md](splat_study.md)・[splat_guide.md](splat_guide.md)） |
 
-Splat モードは、Surface モードがスクリーン空間の処理で視点に依存し、土砂に合わないことから後で追加した。設計と実装は [splat_guide.md](splat_guide.md) にまとめてあり、この解説書では扱わない（共通の部分の変更点は §5.5 と §6.4 に記す）。
+Splat モードは、Surface モードがスクリーン空間の処理で視点に依存し、土砂に合わないことから後で追加した。計画は [splat_guide.md](splat_guide.md)、実装の説明は [splat_implementation.md](splat_implementation.md) にまとめてあり、この解説書では扱わない（共通の部分の変更点は §5.5 と §6.4 に記す）。
 
 粉塵（段階 3）は、Spheres・Surface・Splat のどれでも ON / OFF できる。
 デバッグ色（Space キー）は、Spheres と Surface でも球の色として使える。
