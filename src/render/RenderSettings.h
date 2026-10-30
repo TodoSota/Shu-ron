@@ -15,6 +15,16 @@ enum class RenderMode : int {
 	Points = 0,		// 従来の点描画 (陰影なし。state のデバッグ色の確認用)
 	Spheres = 1,	// 球インポスタ + 陰影 + 影 + AO (段階 1)
 	Surface = 2,	// 粒子の深度を平滑化して連続した面にする (段階 2)。陰影・影・AO は段階 1 と共通
+	Splat = 3,		// 密度格子で表面粒子と法線を求め、半透明のカーネルで描く (docs/splat_guide.md)。
+					// 現在は段階 1: 表面らしさ・法線・密度を球の色で表示する
+};
+
+/// Splat モードで球の色に使う値 (段階 1 のデバッグ表示)
+enum class SurfelDebug : int {
+	Off = 0,		// 通常の色
+	Surface = 1,	// 表面らしさ (青 = 内部 → 赤 = 表面)
+	Normal = 2,		// 法線 (ワールド座標、n × 0.5 + 0.5。法線なしは灰色)
+	Density = 3,	// 密度 / ρ_ref (黒 = 0 → 白 = 1 以上)
 };
 
 struct RenderSettings {
@@ -62,7 +72,17 @@ struct RenderSettings {
 	float grainStrength{ 0.3f };		// ノイズによる細かい凹凸の強さ
 	float grainScale{ 1.0f };			// 凹凸の大きさ = grainScale × 描画半径
 
-	// --- 粉塵 (段階 3。Spheres / Surface モードで描く) ---
+	// --- 格子による表面粒子の抽出 (Splat モード。docs/splat_guide.md §8) ---
+	float densityCellScale{ 1.5f };		// 密度格子のセルの一辺 = densityCellScale × particleSpacing
+	float densityBlurSigma{ 1.0f };		// 密度のぼかしの標準偏差 [セル]。法線の滑らかさを決める (0 でぼかさない)
+	float outsideOffsetScale{ 1.0f };	// 表面判定で法線方向に見る距離 = outsideOffsetScale × セルの一辺
+	float surfaceLo{ 0.25f };			// 外の密度がこれ以下 (ρ_ref に対する割合) なら表面
+	float surfaceHi{ 0.75f };			// 外の密度がこれ以上なら内部
+	float surfaceCutoff{ 0.02f };		// 表面らしさがこれ未満の粒子は内部として扱う (描かない)
+	SurfelDebug surfelDebug{ SurfelDebug::Surface };	// 段階 1 のデバッグ表示
+	bool hideInterior{ false };			// 内部の粒子を描かない (表面粒子だけを確認する)
+
+	// --- 粉塵 (段階 3。Spheres / Surface / Splat モードで描く) ---
 	bool dust{ true };
 	float dustEmitRate{ 0.06f };		// 条件を満たす粒子 1 個が、1 フレームに粉塵を出す確率
 	float dustSpeedThreshold{ 1.0f };	// これより速い砂の粒子から粉塵が出る [m/s] (2 倍の速さで最大)

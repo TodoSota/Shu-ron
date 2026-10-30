@@ -137,6 +137,7 @@
     <ClCompile Include="src\render\PassTimer.cpp" />
     <ClCompile Include="src\render\ScreenSpaceSurface.cpp" />
     <ClCompile Include="src\render\DustSystem.cpp" />
+    <ClCompile Include="src\render\SplatSurface.cpp" />
     <ClCompile Include="src\core\Errorcheck.cpp" />
     <ClCompile Include="ImGui\imgui.cpp" />
     <ClCompile Include="ImGui\imgui_draw.cpp" />
@@ -187,6 +188,10 @@
     <None Include="src\render\shaders\dust.vert" />
     <None Include="src\render\shaders\dust.frag" />
     <None Include="src\render\shaders\wboit_composite.frag" />
+    <None Include="src\render\shaders\density_splat.comp" />
+    <None Include="src\render\shaders\density_resolve.comp" />
+    <None Include="src\render\shaders\density_blur.comp" />
+    <None Include="src\render\shaders\surfel_prepare.comp" />
     <None Include="legacy\setup.comp" />
     <None Include="legacy\update.comp" />
   </ItemGroup>
@@ -203,6 +208,7 @@
     <ClInclude Include="src\render\RenderSettings.h" />
     <ClInclude Include="src\render\ScreenSpaceSurface.h" />
     <ClInclude Include="src\render\DustSystem.h" />
+    <ClInclude Include="src\render\SplatSurface.h" />
     <ClInclude Include="src\core\Camera.h" />
     <ClInclude Include="src\core\Errorcheck.h" />
     <ClInclude Include="legacy\Mesh.h" />

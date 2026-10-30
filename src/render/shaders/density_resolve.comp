@@ -1,0 +1,23 @@
+#version 430 core
+
+//==============================================================================
+// density_resolve.comp : 固定小数点の密度を float の 3D テクスチャに変換する (Splat モード S2)
+// 目的: density_splat.comp で uint に加算した値を「1 セルあたりの粒子数」に戻し、
+//       後のぼかしと、三線形補間による参照 (texture()) ができる形にする。
+//==============================================================================
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 4) in;
+
+layout(std430, binding = 5) readonly buffer DensityBuffer { uint cell[]; };
+layout(r32f, binding = 0) writeonly uniform image3D dst;
+
+uniform int gridN;
+
+const float kFixed = 1024.0;	// density_splat.comp と同じ値
+
+void main() {
+	ivec3 c = ivec3(gl_GlobalInvocationID);
+	if (any(greaterThanEqual(c, ivec3(gridN)))) return;
+	float rho = float(cell[(c.z * gridN + c.y) * gridN + c.x]) / kFixed;
+	imageStore(dst, c, vec4(rho, 0.0, 0.0, 0.0));
+}

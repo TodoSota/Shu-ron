@@ -13,6 +13,7 @@ flat in vec3 v_centerView;
 flat in int v_state;
 flat in int v_material;
 flat in int v_id;
+flat in vec3 v_surfelColor;
 
 uniform mat4 projection;
 uniform float pointRadius;
@@ -20,6 +21,7 @@ uniform vec3 sandColor;
 uniform vec3 stoneColor;
 uniform float colorVariation;
 uniform bool useDebugColor;
+uniform int surfelDebug;	// > 0 なら surfel のデバッグ色 (Splat モード段階 1)
 
 layout(location = 0) out vec4 o_albedo;	// rgb: 色 (線形), a: 種別 (0.25 = 粒子)
 layout(location = 1) out vec4 o_normal;	// xyz: ビュー空間の法線
@@ -51,7 +53,10 @@ void main() {
 
 	// 色: 材質の基本色に、粒子ごとの明るさと色合いのばらつきを加える
 	vec3 albedo;
-	if (useDebugColor) {
+	if (surfelDebug > 0) {
+		// 陰影の計算の Albedo 表示 (ガンマ 1/2.2) で、この色がそのまま表示されるようにしておく
+		albedo = pow(v_surfelColor, vec3(2.2));
+	} else if (useDebugColor) {
 		// 塑性の状態で色分け (従来の point.frag と同じ配色)
 		if (v_state == 0)      albedo = vec3(1.0, 0.2, 0.2);	// 引張
 		else if (v_state == 1) albedo = vec3(0.6, 0.9, 0.1);	// 弾性

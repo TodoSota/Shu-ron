@@ -141,12 +141,14 @@ void main() {
 	                 rhoAt(x + vec3(0, 0, e)) - rhoAt(x - vec3(0, 0, e))) / (2.0 * e);
 	float g = length(grad);
 	float rho = rhoAt(x);
-	vec3 n = (g * cellSize > 0.05 * rho + 1e-4) ? -grad / g : vec3(0.0);	// 勾配が弱すぎれば法線なし
-	float rhoOut = rhoAt(x + n * outsideOffset);
+	float strength = g * cellSize / rhoRef;	// 1 セル進む間の密度の変化 (ρ_ref に対する割合)
+	bool hasNormal = strength > 0.05;		// 勾配が弱すぎれば向きが定まらないので法線なし
+	vec3 n = hasNormal ? -grad / g : vec3(0.0);
 	// 法線がない粒子は、周囲が疎なら孤立粒子 (表面)、密なら内部の一様な場所 (内部) とする
-	float surface = smoothstep(surfaceHi, surfaceLo, (n == vec3(0.0)) ? rho : rhoOut);
+	float rhoOut = hasNormal ? rhoAt(x + n * outsideOffset) : rho;
+	float surface = 1.0 - smoothstep(surfaceLo, surfaceHi, rhoOut);
 	s[i].normalSurface = vec4(n, surface);
-	s[i].extra = vec4(rho, 0.0, 0.0, 0.0);
+	s[i].extra = vec4(rho, strength, 0.0, 0.0);
 }
 ```
 

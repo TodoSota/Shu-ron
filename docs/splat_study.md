@@ -97,11 +97,11 @@ PCA を使わないので surface variation σ は得られません。代わり
 
 ## 参考文献
 
-書誌情報は記憶によるもので、未確認です。論文で引用する前に原典を確認してください。
+Meng et al. (2015) は原典（論文 PDF の ACM Reference Format）で確認済みです。それ以外の書誌情報は記憶によるもので未確認なので、論文で引用する前に原典を確認してください。
 
 - Zwicker, Pfister, van Baar, Gross. Surface Splatting. SIGGRAPH 2001.（半透明カーネルによる点の描画）
 - Botsch, Hornung, Zwicker, Kobbelt. High-Quality Surface Splatting on Today's GPUs. Eurographics Symposium on Point-Based Graphics 2005.（deferred splatting）
 - Hoppe, DeRose, Duchamp, McDonald, Stuetzle. Surface Reconstruction from Unorganized Points. SIGGRAPH 1992.（PCA による法線推定）
 - Pauly, Gross, Kobbelt. Efficient Simplification of Point-Sampled Surfaces. IEEE Visualization 2002.（surface variation）
 - Yu, Turk. Reconstructing Surfaces of Particle-Based Fluids Using Anisotropic Kernels. ACM TOG 2013.（粒子の共分散による異方性カーネル）
-- Meng et al. 2015.（粒状体の描画。著者・題名・掲載先は要確認）
+- Meng, J., Papas, M., Habel, R., Dachsbacher, C., Marschner, S., Gross, M., & Jarosz, W. (2015). Multi-scale modeling and rendering of granular materials. *ACM Transactions on Graphics*, 34(4), Article 49. https://doi.org/10.1145/2766949（粒状体のオフラインのレンダリング。粒の集まりの見え方は、大きなスケールでは個々の粒の形よりも、多くの粒の間で光が散乱する層として決まることを示す。土砂の表面をあいまいな層として描く根拠）
