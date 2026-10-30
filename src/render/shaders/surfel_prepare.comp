@@ -1,0 +1,71 @@
+#version 430 core
+
+//==============================================================================
+// surfel_prepare.comp : 粒子ごとの表面らしさ・法線・密度を求める (Splat モード S3)
+// 目的: 密度格子から、各粒子が表面にあるかどうかと、表面の向き (法線) を求める。
+//   法線        : n = -∇ρ / |∇ρ| (密度勾配の逆向き、ワールド座標)。中心差分の幅は 1 セル
+//   表面らしさ  : 法線方向に outsideOffset だけ外へ出た点の密度 ρ_out が
+//                 surfaceLo 以下なら 1 (外が空)、surfaceHi 以上なら 0 (外も詰まっている)。
+//                 smoothstep で連続に変え、境目で粒子が急に現れたり消えたりしないようにする
+//   法線なし    : 勾配がほとんどない粒子 (空中に孤立した粒、または内部の一様な場所) は n = 0 とし、
+//                 表面らしさは粒子の位置の密度 ρ で決める (孤立した粒は表面、内部は内部になる)
+//   密度        : 陰影のあいまいさ (まばらさ) に使う
+// 精密さより、見かけの制御のしやすさと速度を重視して、PCA ではなく密度勾配を使う
+// (docs/splat_study.md「(a) を採用する理由」)。
+//==============================================================================
+
+layout(local_size_x = 256) in;
+
+struct mpmParticle {
+	vec4 position;
+	vec4 velocity;
+	mat4 affineC;
+	mat4 deformation;
+	float alpha;
+	float q;
+	float vc;
+	int state;
+	int scale;
+	int padding[3];
+};
+layout(std430, binding = 0) readonly buffer mpmBuffer { mpmParticle p[]; };
+
+struct Surfel {
+	vec4 normalSurface;	// xyz: 法線 (ワールド座標、なければ 0), w: 表面らしさ [0, 1]
+	vec4 extra;			// x: 密度 [個/セル], y: 勾配の強さ |∇ρ|·h / ρ_ref
+};
+layout(std430, binding = 4) writeonly buffer SurfelBuffer { Surfel s[]; };
+
+uniform sampler3D density;		// 1 セルあたりの粒子数 (ぼかし済み、格子の外は 0)
+uniform int particleCount;
+uniform float gridExtent;		// 格子の一辺の長さ N·h [m]
+uniform float cellSize;			// h [m]
+uniform float rhoRef;			// 粒子が隙間なく詰まったときの密度 [個/セル]
+uniform float outsideOffset;	// 表面判定で法線方向に見る距離 [m]
+uniform float surfaceLo;		// [個/セル] 外の密度がこれ以下なら表面
+uniform float surfaceHi;		// [個/セル] 外の密度がこれ以上なら内部
+
+float rhoAt(vec3 x) { return texture(density, x / gridExtent).r; }
+
+void main() {
+	uint i = gl_GlobalInvocationID.x;
+	if (i >= uint(particleCount)) return;
+
+	vec3 x = p[i].position.xyz;
+	float e = cellSize;
+	vec3 grad = vec3(rhoAt(x + vec3(e, 0.0, 0.0)) - rhoAt(x - vec3(e, 0.0, 0.0)),
+	                 rhoAt(x + vec3(0.0, e, 0.0)) - rhoAt(x - vec3(0.0, e, 0.0)),
+	                 rhoAt(x + vec3(0.0, 0.0, e)) - rhoAt(x - vec3(0.0, 0.0, e))) / (2.0 * e);
+	float g = length(grad);
+	float rho = rhoAt(x);
+	float strength = g * cellSize / rhoRef;	// 1 セル進む間の密度の変化 (ρ_ref に対する割合)
+
+	// 勾配が弱すぎる (ρ_ref の 5% 未満) と向きが定まらないので、法線なしとする
+	bool hasNormal = strength > 0.05;
+	vec3 n = hasNormal ? -grad / g : vec3(0.0);
+	float rhoOut = hasNormal ? rhoAt(x + n * outsideOffset) : rho;
+	float surface = 1.0 - smoothstep(surfaceLo, surfaceHi, rhoOut);
+
+	s[i].normalSurface = vec4(n, surface);
+	s[i].extra = vec4(rho, strength, 0.0, 0.0);
+}

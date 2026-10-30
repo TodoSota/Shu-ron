@@ -26,6 +26,7 @@ uniform float sunIntensity;
 uniform vec3 skyColor;
 uniform float ambientIntensity;
 uniform bool useShadow;
+uniform float shadowStrength;	// 影の効き具合 (0 = 影なし, 1 = 影の中は空の光だけ)
 uniform sampler2DShadow shadowTex;
 
 flat out float v_alpha;		// 濃さ
@@ -59,5 +60,8 @@ void main() {
 		if (sc.z <= 1.0) lit = texture(shadowTex, vec3(sc.xy, sc.z - 0.002));
 	}
 	// 細かい粒は光をあらゆる方向へ散乱するので、向きによらない明るさとする
+	// 粉塵は半透明で、中心の 1 点だけで影を判定すると影の内外で明るさが急に変わり、
+	// 影の中の粉塵が灰色の斑点として目立つ。影の効きを shadowStrength で弱める
+	lit = mix(1.0, lit, shadowStrength);
 	v_light = sunColor * sunIntensity * 0.6 * lit + skyColor * ambientIntensity;
 }

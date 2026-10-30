@@ -72,6 +72,9 @@
     <ClCompile Include="src\render\DustSystem.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
+    <ClCompile Include="src\render\SplatSurface.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
     <ClCompile Include="src\controller\InteractionController.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
@@ -144,10 +147,31 @@
     <None Include="src\render\shaders\wboit_composite.frag">
       <Filter>シェーダーファイル</Filter>
     </None>
+    <None Include="src\render\shaders\splat.vert">
+      <Filter>シェーダーファイル</Filter>
+    </None>
+    <None Include="src\render\shaders\splat.frag">
+      <Filter>シェーダーファイル</Filter>
+    </None>
+    <None Include="src\render\shaders\splat_normalize.frag">
+      <Filter>シェーダーファイル</Filter>
+    </None>
     <None Include="src\render\shaders\dust_emit.comp">
       <Filter>コンピュートシェーダファイル</Filter>
     </None>
     <None Include="src\render\shaders\dust_update.comp">
+      <Filter>コンピュートシェーダファイル</Filter>
+    </None>
+    <None Include="src\render\shaders\density_splat.comp">
+      <Filter>コンピュートシェーダファイル</Filter>
+    </None>
+    <None Include="src\render\shaders\density_resolve.comp">
+      <Filter>コンピュートシェーダファイル</Filter>
+    </None>
+    <None Include="src\render\shaders\density_blur.comp">
+      <Filter>コンピュートシェーダファイル</Filter>
+    </None>
+    <None Include="src\render\shaders\surfel_prepare.comp">
       <Filter>コンピュートシェーダファイル</Filter>
     </None>
     <None Include="legacy\setup.comp">
@@ -236,6 +260,9 @@
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
     <ClInclude Include="src\render\DustSystem.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="src\render\SplatSurface.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
     <ClInclude Include="src\mpm\MpmPhysics.h">

@@ -10,7 +10,10 @@
 //   Spheres : drawScene() による deferred shading
 //             (A) シャドウマップ → (B) G-buffer → (F) SSAO → (G) 陰影の計算
 //   Surface : Spheres の (B) と (F) の間に、粒子の面を張る処理 (D)(E) を入れる
-//   粉塵 (H): Spheres / Surface モードで、(G) の後に半透明で重ねる (DustSystem)
+//   Splat   : (A) の前に密度格子で表面粒子と法線を求める (S、SplatSurface)。
+//             (B) では粒子を描かず、(B) の後に表面粒子を円盤として重ねて描いて G-buffer に書く (P)
+//             (docs/splat_guide.md。現在は段階 2)
+//   粉塵 (H): Spheres / Surface / Splat モードで、(G) の後に半透明で重ねる (DustSystem)
 //             (パスの名前は docs/rendering_guide.md の図に対応する)
 //==============================================================================
 
@@ -26,6 +29,7 @@
 #include "SsaoPass.h"
 #include "ScreenSpaceSurface.h"
 #include "DustSystem.h"
+#include "SplatSurface.h"
 #include "PassTimer.h"
 
 // 前方宣言
@@ -73,6 +77,7 @@ private:
     std::unique_ptr<SsaoPass> ssao;
     std::unique_ptr<ScreenSpaceSurface> surface;
     std::unique_ptr<DustSystem> dust;
+    std::unique_ptr<SplatSurface> splat;
     PassTimer timer;
     float worldScale{ 1.0f };
 
@@ -83,7 +88,8 @@ private:
     void initDeferred();
 
     // --- Spheres モードの描画ヘルパー ---
-    void drawSpheres(const MpmObject& mpmObject, const glm::mat4& view, const glm::mat4& projection, float viewportHeight, bool useDebugColor);
+    /// @param[in] surfelView Splat モードの表面らしさ・法線・密度を色にする (G-buffer のときだけ true)
+    void drawSpheres(const MpmObject& mpmObject, const glm::mat4& view, const glm::mat4& projection, float viewportHeight, bool useDebugColor, bool surfelView = false);
     float drawRadius() const;       // 現在のモードでの球の描画半径 [m]
     void updateFloorQuad(const MpmPhysics& physics);
     void drawMeshTo(GLuint program, const SdfInstance& obstacle, const glm::mat4& view, const glm::mat4& projection);

@@ -176,6 +176,7 @@ void DustSystem::draw(GLuint sceneDepthTex, int width, int height, const glm::ma
 	setFloat(drawProgram, "exposure", settings.exposure);
 	setFloat(drawProgram, "softRange", 4.0f * particleRadius);
 	setInt(drawProgram, "useShadow", (settings.shadows && shadowTex != 0) ? 1 : 0);
+	setFloat(drawProgram, "shadowStrength", settings.dustShadow);
 	glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, sceneDepthTex);
 	glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, shadowTex);
 	setInt(drawProgram, "sceneDepth", 0);

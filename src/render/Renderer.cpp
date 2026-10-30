@@ -11,6 +11,7 @@
 
 #include <GLM/gtc/type_ptr.hpp>
 #include <cmath>
+#include <algorithm>
 
 #include "../../ImGui/imgui.h"
 
@@ -248,6 +249,7 @@ void Renderer::initDeferred() {
     ssao = std::make_unique<SsaoPass>();
     surface = std::make_unique<ScreenSpaceSurface>();
     dust = std::make_unique<DustSystem>();
+    splat = std::make_unique<SplatSurface>();
 }
 
 // 床の平面 n·x = h 上に、領域を十分に覆う四角形を置く
@@ -281,7 +283,7 @@ float Renderer::drawRadius() const {
 }
 
 // 粒子を球インポスタで描く (G-buffer とシャドウマップの両方で使う)
-void Renderer::drawSpheres(const MpmObject& mpmObject, const glm::mat4& view, const glm::mat4& projection, float viewportHeight, bool useDebugColor) {
+void Renderer::drawSpheres(const MpmObject& mpmObject, const glm::mat4& view, const glm::mat4& projection, float viewportHeight, bool useDebugColor, bool surfelView) {
     glUseProgram(sphereProgram);
     setMat4(sphereProgram, "view", view);
     setMat4(sphereProgram, "projection", projection);
@@ -291,6 +293,13 @@ void Renderer::drawSpheres(const MpmObject& mpmObject, const glm::mat4& view, co
     setVec3(sphereProgram, "stoneColor", settings.stoneColor);
     setFloat(sphereProgram, "colorVariation", settings.colorVariation);
     setInt(sphereProgram, "useDebugColor", useDebugColor ? 1 : 0);
+    // Splat モード段階 1: surfel バッファ (SplatSurface::prepare の結果) を読んで色を決める
+    const bool useSurfel = surfelView && splat && splat->surfelBuffer() != 0;
+    setInt(sphereProgram, "surfelDebug", useSurfel ? static_cast<int>(settings.surfelDebug) : 0);
+    setInt(sphereProgram, "hideInterior", (useSurfel && settings.hideInterior) ? 1 : 0);
+    setFloat(sphereProgram, "surfaceCutoff", settings.surfaceCutoff);
+    setFloat(sphereProgram, "rhoRef", splat ? splat->referenceDensity() : 1.0f);
+    if (useSurfel) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, SplatSurface::kSurfelBinding, splat->surfelBuffer());
 
     // 点の大きさをシェーダーで決め、点スプライトを有効にする
     const bool compat = isCompatibilityProfile();
@@ -341,6 +350,14 @@ void Renderer::drawScene(const MpmObject& mpmObject, const SdfInstance& obstacle
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
 
+    // --- (S) Splat モード: 密度格子で表面粒子と法線を求める ---
+    const bool splatMode = (settings.mode == RenderMode::Splat);
+    if (splatMode) {
+        timer.begin("Grid");
+        splat->prepare(mpmObject, worldScale, settings);
+        timer.end();
+    }
+
     // --- (A) シャドウマップ: 光源から見た深度 ---
     const glm::vec3 sunDir = settings.sunDirection();
     if (settings.shadows) {
@@ -350,7 +367,9 @@ void Renderer::drawScene(const MpmObject& mpmObject, const SdfInstance& obstacle
         shadowMap.bind();
         glClear(GL_DEPTH_BUFFER_BIT);
         glDisable(GL_CULL_FACE);	// 障害物の裏面も影を落とすようにする
-        drawSpheres(mpmObject, shadowMap.getView(), shadowMap.getProjection(), static_cast<float>(shadowMap.getResolution()), false);
+        // Splat モードで密度格子の影を使うときは、砂の影はレイマーチで求めるので、粒子は描かない (障害物だけ)
+        if (!(splatMode && settings.splatting && settings.densityShadow))
+            drawSpheres(mpmObject, shadowMap.getView(), shadowMap.getProjection(), static_cast<float>(shadowMap.getResolution()), false);
         drawMeshTo(depthMeshProgram, obstacle, shadowMap.getView(), shadowMap.getProjection());
         glEnable(GL_CULL_FACE);
         timer.end();
@@ -385,8 +404,17 @@ void Renderer::drawScene(const MpmObject& mpmObject, const SdfInstance& obstacle
     drawMeshTo(gbufferMeshProgram, obstacle, view, projection);
 
     // 粒子
-    drawSpheres(mpmObject, view, projection, static_cast<float>(fbHeight), useDebugColor);
+    // Splat モードでは、粒子は (P) で円盤として描く (Splatting を切ると球で描く: 段階 1 の表示)
+    const bool splatting = splatMode && settings.splatting;
+    if (!splatting) drawSpheres(mpmObject, view, projection, static_cast<float>(fbHeight), useDebugColor, splatMode);
     timer.end();
+
+    // --- (P) Splat モード: 表面粒子の円盤を重ねて描き、G-buffer に書き込む ---
+    if (splatting) {
+        timer.begin("Splat");
+        splat->draw(mpmObject, gbuffer, view, projection, useDebugColor, settings, emptyVAO);
+        timer.end();
+    }
 
     // --- (D)(E) Surface モード: 粒子の深度を平滑化して面を張り、G-buffer の法線と深度を置き換える ---
     if (settings.mode == RenderMode::Surface) {
@@ -415,11 +443,32 @@ void Renderer::drawScene(const MpmObject& mpmObject, const SdfInstance& obstacle
     glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D, gbuffer.depthTexture());
     glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_2D, aoTex);
     glActiveTexture(GL_TEXTURE4); glBindTexture(GL_TEXTURE_2D, shadowMap.depthTexture());
+    // Splat モード: 半透明の splat 層 (被覆率の小さい輪郭・まばらな部分) を重ねる
+    for (int i = 0; i < 3; ++i) {
+        glActiveTexture(GL_TEXTURE5 + i);
+        glBindTexture(GL_TEXTURE_2D, splatting ? splat->layerTexture(i) : 0);
+    }
     setInt(lightingProgram, "gAlbedo", 0);
     setInt(lightingProgram, "gNormal", 1);
     setInt(lightingProgram, "gDepth", 2);
     setInt(lightingProgram, "aoTex", 3);
     setInt(lightingProgram, "shadowTex", 4);
+    setInt(lightingProgram, "splatAlbedo", 5);
+    setInt(lightingProgram, "splatNormal", 6);
+    setInt(lightingProgram, "splatDepth", 7);
+    setInt(lightingProgram, "useSplatLayer", splatting ? 1 : 0);
+    setFloat(lightingProgram, "opaqueAlpha", settings.opaqueAlpha);
+    // 柔らかい拡散反射は Splat モードの粒子だけ (ほかのモードの見た目は変えない)
+    setFloat(lightingProgram, "particleWrap", splatting ? settings.splatWrap : 0.0f);
+    setFloat(lightingProgram, "fuzzWrap", splatting ? settings.fuzzWrap : 0.0f);
+    // 密度格子による砂の影 (段階 4)。詰まった砂 (ρ_ref) を 1 セル進むと光学的厚さ densityShadowOpacity
+    glActiveTexture(GL_TEXTURE8);
+    glBindTexture(GL_TEXTURE_3D, splatting ? splat->densityTexture() : 0);
+    setInt(lightingProgram, "densityTex", 8);
+    setInt(lightingProgram, "useDensityShadow", (splatting && settings.densityShadow) ? 1 : 0);
+    setFloat(lightingProgram, "gridExtent", splat->cellSize() * splat->gridSize());
+    setFloat(lightingProgram, "cellSize", splat->cellSize());
+    setFloat(lightingProgram, "tauPerDensity", settings.densityShadowOpacity / std::max(splat->referenceDensity(), 1e-3f));
     setMat4(lightingProgram, "invProjection", glm::inverse(projection));
     setMat4(lightingProgram, "invView", glm::inverse(view));
     setMat4(lightingProgram, "lightViewProjection", shadowMap.getViewProjection());
@@ -434,10 +483,18 @@ void Renderer::drawScene(const MpmObject& mpmObject, const SdfInstance& obstacle
     setInt(lightingProgram, "useAO", (settings.ssao && aoTex != 0) ? 1 : 0);
     setFloat(lightingProgram, "shadowBias", settings.shadowBias);
     // Surface モードでは、平滑化した面が球の頂点より低くなり、シャドウマップ上の球に自分で影を
-    // 落としてしまう (谷が黒い斑点になる)。そのため、参照位置を描画半径の分だけ法線方向へずらす
-    const float normalOffset = settings.shadowNormalOffset + ((settings.mode == RenderMode::Surface) ? drawRadius() : 0.0f);
-    setFloat(lightingProgram, "shadowNormalOffset", normalOffset);
-    setInt(lightingProgram, "debugView", settings.debugView);
+    // 落としてしまう (谷が黒い斑点になる)。そのため、粒子の画素だけ参照位置を法線方向へずらす。
+    // Splat モードの円盤は粒子の中心を通り、さらに重み付き平均で少し奥に下がるので、
+    // 描画半径の 3 倍ずらす (2 倍では斑点が残った)
+    //   密度格子の影を使うときは、シャドウマップに粒子がないので、ずらす必要はない
+    const bool densityShadow = splatting && settings.densityShadow;
+    const float particleOffset = (settings.mode == RenderMode::Surface) ? drawRadius()
+        : (splatting && !densityShadow) ? 3.0f * drawRadius() : 0.0f;
+    setFloat(lightingProgram, "shadowNormalOffset", settings.shadowNormalOffset);
+    setFloat(lightingProgram, "particleShadowOffset", particleOffset);
+    // Splat モードの surfel のデバッグ色は、陰影を付けずに表示する (Final のときは Albedo 表示に切り替える)
+    const bool surfelColors = splatMode && settings.surfelDebug != SurfelDebug::Off;
+    setInt(lightingProgram, "debugView", (surfelColors && settings.debugView == 0) ? 1 : settings.debugView);
     glBindVertexArray(emptyVAO);
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glBindVertexArray(0);
@@ -453,7 +510,8 @@ void Renderer::drawScene(const MpmObject& mpmObject, const SdfInstance& obstacle
     }
 
     // 後始末 (この後に描く枠線・プレビュー・ImGui が従来どおり描けるように戻す)
-    for (int unit = 4; unit >= 0; --unit) { glActiveTexture(GL_TEXTURE0 + unit); glBindTexture(GL_TEXTURE_2D, 0); }
+    glActiveTexture(GL_TEXTURE8); glBindTexture(GL_TEXTURE_3D, 0);
+    for (int unit = 7; unit >= 0; --unit) { glActiveTexture(GL_TEXTURE0 + unit); glBindTexture(GL_TEXTURE_2D, 0); }
     glDepthFunc(GL_LESS);
     glUseProgram(0);
     glClearColor(0.8f, 0.8f, 0.8f, 1.0f);	// main.cpp の背景色に戻す (Points モード用)
@@ -473,7 +531,8 @@ void Renderer::drawSettingsUi() {
     int mode = static_cast<int>(settings.mode);
     ImGui::RadioButton("Points", &mode, 0); ImGui::SameLine();
     ImGui::RadioButton("Spheres", &mode, 1); ImGui::SameLine();
-    ImGui::RadioButton("Surface", &mode, 2);
+    ImGui::RadioButton("Surface", &mode, 2); ImGui::SameLine();
+    ImGui::RadioButton("Splat", &mode, 3);
     settings.mode = static_cast<RenderMode>(mode);
     if (settings.mode == RenderMode::Points) return;
 
@@ -484,6 +543,35 @@ void Renderer::drawSettingsUi() {
         ImGui::SliderInt("Smooth iterations", &settings.smoothIterations, 0, 4);
         ImGui::SliderFloat("Grain", &settings.grainStrength, 0.0f, 1.0f);
         ImGui::SliderFloat("Sphere normal mix", &settings.sphereNormalMix, 0.0f, 1.0f);
+    }
+
+    if (settings.mode == RenderMode::Splat) {
+        // 表面粒子の円盤 (段階 2) と、密度格子による表面粒子の抽出・法線 (段階 1)
+        ImGui::Checkbox("Splatting", &settings.splatting);
+        if (settings.splatting) {
+            ImGui::SliderFloat("Splat radius", &settings.splatRadiusScale, 0.8f, 3.0f);
+            ImGui::SliderFloat("Splat sharpness", &settings.splatSharpness, 0.5f, 6.0f);
+            ImGui::SliderFloat("Splat depth offset", &settings.splatDepthOffsetScale, 0.1f, 1.5f);
+            ImGui::SliderFloat("Coverage k", &settings.coverageK, 0.2f, 8.0f);
+            ImGui::SliderFloat("Opaque alpha", &settings.opaqueAlpha, 0.0f, 1.0f);
+            ImGui::SliderFloat("Wrap", &settings.splatWrap, 0.0f, 1.0f);
+            ImGui::SliderFloat("Fuzz wrap", &settings.fuzzWrap, 0.0f, 1.0f);
+            ImGui::Checkbox("Density shadow", &settings.densityShadow);
+            if (settings.densityShadow) ImGui::SliderFloat("Shadow opacity", &settings.densityShadowOpacity, 0.1f, 5.0f);
+        } else {
+            ImGui::SameLine();
+            ImGui::Checkbox("Hide interior", &settings.hideInterior);
+        }
+        int debug = static_cast<int>(settings.surfelDebug);
+        ImGui::Combo("Surfel view", &debug, "Off\0" "Surface\0" "Normal\0" "Density\0");
+        settings.surfelDebug = static_cast<SurfelDebug>(debug);
+        ImGui::SliderFloat("Cell scale", &settings.densityCellScale, 1.0f, 3.0f);
+        ImGui::SliderFloat("Density blur", &settings.densityBlurSigma, 0.0f, 3.0f);
+        ImGui::SliderFloat("Outside offset", &settings.outsideOffsetScale, 0.5f, 2.0f);
+        ImGui::SliderFloat("Surface lo", &settings.surfaceLo, 0.0f, 1.0f);
+        ImGui::SliderFloat("Surface hi", &settings.surfaceHi, 0.0f, 1.5f);
+        if (settings.surfaceHi < settings.surfaceLo + 0.01f) settings.surfaceHi = settings.surfaceLo + 0.01f;
+        ImGui::Text("Grid: %d^3, cell %.1f mm", splat->gridSize(), splat->cellSize() * 1000.0f);
     }
 
     ImGui::SliderFloat("Radius scale", &settings.radiusScale, 0.5f, 3.0f);
@@ -508,6 +596,7 @@ void Renderer::drawSettingsUi() {
         ImGui::SliderFloat("Opacity", &settings.dustOpacity, 0.0f, 0.5f);
         ImGui::SliderFloat("Drag", &settings.dustDrag, 0.1f, 10.0f);
         ImGui::SliderFloat("Turbulence", &settings.dustTurbulence, 0.0f, 1.0f);
+        ImGui::SliderFloat("Dust shadow", &settings.dustShadow, 0.0f, 1.0f);
         ImGui::ColorEdit3("Dust color", &settings.dustColor[0]);
         if (ImGui::Button("Clear dust")) clearDust();
         ImGui::TreePop();
@@ -521,7 +610,7 @@ void Renderer::drawSettingsUi() {
         if (ImGui::Combo("Shadow map", &resIndex, "1024\0" "2048\0")) settings.shadowResolution = resIndex ? 2048 : 1024;
         ImGui::SliderFloat("Smooth depth threshold", &settings.smoothDepthScale, 0.5f, 6.0f);
         ImGui::SliderFloat("Grain size", &settings.grainScale, 0.25f, 4.0f);
-        ImGui::Combo("Debug view", &settings.debugView, "Final\0" "Albedo\0" "Normal\0" "AO\0" "Shadow\0");
+        ImGui::Combo("Debug view", &settings.debugView, "Final\0" "Albedo\0" "Normal\0" "AO\0" "Shadow\0" "Coverage\0");
         ImGui::TreePop();
     }
     // 描画パスごとの GPU 時間

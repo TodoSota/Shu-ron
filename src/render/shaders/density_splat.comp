@@ -1,0 +1,50 @@
+#version 430 core
+
+//==============================================================================
+// density_splat.comp : 粒子を描画用の密度格子に加算する (Splat モード S1)
+// 目的: 表面の判定と法線 (密度勾配) のために、粒子の個数密度を粗い格子に集める。
+//       粒子を最寄りの 1 セルではなく周囲 8 セルへ三線形の重みで配り、勾配を滑らかにする。
+//       GLSL 4.3 には float の atomicAdd がないので、uint の固定小数点 (× kFixed) で加算する。
+//       セル (i, j, k) の中心は ((i, j, k) + 0.5) · h に置く (3D テクスチャの texel 中心と同じ約束)。
+//==============================================================================
+
+layout(local_size_x = 256) in;
+
+// 粒子のデータ構造 (シミュレーションのシェーダーと同じもの)。位置だけを使う
+struct mpmParticle {
+	vec4 position;
+	vec4 velocity;
+	mat4 affineC;
+	mat4 deformation;
+	float alpha;
+	float q;
+	float vc;
+	int state;
+	int scale;
+	int padding[3];
+};
+layout(std430, binding = 0) readonly buffer mpmBuffer { mpmParticle p[]; };
+layout(std430, binding = 5) buffer DensityBuffer { uint cell[]; };	// N³ 個 (x が最も速く変わる)
+
+uniform int particleCount;
+uniform int gridN;			// 一辺のセル数 N
+uniform float cellSize;		// セルの一辺 h [m]
+
+const float kFixed = 1024.0;	// 固定小数点の倍率 (SplatSurface.cpp / density_resolve.comp と同じ値)
+
+void main() {
+	uint i = gl_GlobalInvocationID.x;
+	if (i >= uint(particleCount)) return;
+
+	vec3 g = p[i].position.xyz / cellSize - 0.5;	// セル中心が整数になる座標
+	ivec3 b = ivec3(floor(g));
+	vec3 f = g - vec3(b);
+	for (int k = 0; k < 8; ++k) {
+		ivec3 o = ivec3(k & 1, (k >> 1) & 1, k >> 2);
+		ivec3 c = b + o;
+		if (any(lessThan(c, ivec3(0))) || any(greaterThanEqual(c, ivec3(gridN)))) continue;
+		vec3 w3 = mix(1.0 - f, f, vec3(o));
+		uint w = uint(w3.x * w3.y * w3.z * kFixed + 0.5);
+		if (w > 0u) atomicAdd(cell[(c.z * gridN + c.y) * gridN + c.x], w);
+	}
+}
