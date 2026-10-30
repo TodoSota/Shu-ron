@@ -16,7 +16,8 @@ enum class RenderMode : int {
 	Spheres = 1,	// 球インポスタ + 陰影 + 影 + AO (段階 1)
 	Surface = 2,	// 粒子の深度を平滑化して連続した面にする (段階 2)。陰影・影・AO は段階 1 と共通
 	Splat = 3,		// 密度格子で表面粒子と法線を求め、半透明のカーネルで重ねて描く (docs/splat_guide.md)。
-					// 現在は段階 2: 円盤を不透明に描く (輪郭の半透明は段階 3)
+					// 段階 3: 被覆率による輪郭の半透明化と、柔らかい拡散反射 (wrapped Lambert)
+					// 段階 4: 密度格子のレイマーチによる柔らかい影
 };
 
 /// Splat モードで球の色に使う値 (段階 1 のデバッグ表示)
@@ -85,7 +86,12 @@ struct RenderSettings {
 	float splatRadiusScale{ 1.8f };		// 円盤の半径 = splatRadiusScale × particleSpacing
 	float splatSharpness{ 3.0f };		// カーネル exp(-β u²) の β (大きいほど円盤の縁が薄い)
 	float splatDepthOffsetScale{ 0.5f };	// 可視性パスで奥へずらす量 = この値 × 円盤の半径 (混ざり合う厚み)
-	float coverageK{ 2.0f };			// 被覆率 α = 1 - exp(-k Σw) の k (段階 3 で使う)
+	float coverageK{ 2.0f };			// 被覆率 α = 1 - exp(-k Σw) の k (大きいほど速く不透明になる)
+	float opaqueAlpha{ 0.9f };			// α がこれ以上の画素を不透明として G-buffer に書く (未満は半透明で重ねる)
+	float splatWrap{ 0.3f };			// 粒子の wrapped Lambert の基本の a (明暗の境目の柔らかさ)
+	float fuzzWrap{ 0.4f };				// まばらさ (1 - 密度 / ρ_ref) に応じて a に足す量
+	bool densityShadow{ true };			// 砂の影を密度格子のレイマーチで求める (シャドウマップには障害物だけを描く)
+	float densityShadowOpacity{ 1.5f };	// 詰まった砂 1 セル分の光学的厚さ (大きいほど影が濃く、境目がはっきりする)
 
 	// --- 粉塵 (段階 3。Spheres / Surface / Splat モードで描く) ---
 	bool dust{ true };
@@ -100,9 +106,10 @@ struct RenderSettings {
 	float dustSinkSpeed{ 0.05f };		// 沈む速さ [m/s]
 	float dustTurbulence{ 0.25f };		// 乱流のような揺らぎの強さ [m/s]
 	glm::vec3 dustColor{ 0.62f, 0.55f, 0.45f };
+	float dustShadow{ 0.3f };			// 粉塵の影の効き具合 (0 = 影なし、1 = 影の中は空の光だけ)
 
 	// --- デバッグ表示 ---
-	int debugView{ 0 };					// 0: 通常, 1: albedo, 2: 法線, 3: AO, 4: 影
+	int debugView{ 0 };					// 0: 通常, 1: albedo, 2: 法線, 3: AO, 4: 影, 5: 被覆率 (Splat モード)
 
 	/// 描画半径 [m]
 	float particleRadius() const { return 0.5f * radiusScale * particleSpacing; }

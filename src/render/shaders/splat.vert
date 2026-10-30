@@ -39,6 +39,7 @@ uniform float viewportHeight;	// 描画先の高さ [px]
 uniform float surfaceCutoff;	// 表面らしさがこれ未満の粒子は描かない
 uniform float rhoRef;			// 粒子が隙間なく詰まったときの密度 [個/セル]
 uniform int surfelDebug;		// 0: なし, 1: 表面らしさ, 2: 法線, 3: 密度 (RenderSettings::SurfelDebug)
+uniform bool cullBackFacing;	// 裏向きの円盤を描かない (被覆率のパスでは描く)
 
 flat out vec3 v_center;		// 円盤の中心 (ビュー座標)
 flat out vec3 v_normal;		// 円盤の法線 (ビュー座標、カメラ側を向く)
@@ -70,8 +71,11 @@ void main() {
 	else if (surfelDebug == 2) v_surfelColor = hasNormal ? sf.normalSurface.xyz * 0.5 + 0.5 : vec3(0.5);
 	else if (surfelDebug == 3) v_surfelColor = vec3(1.0 - v_fuzz);
 
-	// 内部の粒子と、裏向きの円盤 (山の裏側の表面) は描かない
-	bool skip = sf.normalSurface.w < surfaceCutoff || dot(n, -pv.xyz) < 0.0;
+	// 内部の粒子と、裏向きの円盤 (山の裏側の表面) は描かない。
+	// 裏向きの円盤は、交点の計算のためにカメラ側へ向け直す (被覆率のパスで使う)
+	bool backFacing = dot(n, -pv.xyz) < 0.0;
+	if (backFacing) v_normal = -n;
+	bool skip = sf.normalSurface.w < surfaceCutoff || (cullBackFacing && backFacing);
 	gl_Position = skip ? vec4(2.0, 2.0, 2.0, 1.0) : projection * pv;
 	// 投影後の直径 [px] = 2R · P[1][1] · (H / 2) / w (sphere.vert と同じ)
 	gl_PointSize = skip ? 1.0 : max(splatRadius * projection[1][1] * viewportHeight / gl_Position.w, 1.0);

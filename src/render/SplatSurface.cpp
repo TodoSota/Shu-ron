@@ -178,10 +178,22 @@ void SplatSurface::draw(const MpmObject& mpmObject, const RenderTarget& gbuffer,
 			{ GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_NEAREST },	// Σw·色, Σw (重み w ≤ 1、重なりは数十枚なので 16F で足りる)
 			{ GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_NEAREST },	// Σw·法線, Σw·あいまいさ
 			{ GL_R32F,    GL_RED,  GL_FLOAT, GL_NEAREST },	// Σw·線形深度 (精度のため 32F)
+			{ GL_R16F,    GL_RED,  GL_FLOAT, GL_NEAREST },	// 視線上のすべての円盤の Σw (被覆率)
 		}, true);
 	}
 	else {
 		accumTarget.resize(w, h);
+	}
+	// splat 層 (P4 の出力。陰影の計算で背景の上に重ねる)
+	if (layerTarget.framebuffer() == 0) {
+		layerTarget.create(w, h, {
+			{ GL_RGBA8,   GL_RGBA, GL_UNSIGNED_BYTE, GL_NEAREST },	// 色 + 被覆率 α
+			{ GL_RGBA16F, GL_RGBA, GL_FLOAT,         GL_NEAREST },	// 法線 + あいまいさ
+			{ GL_R32F,    GL_RED,  GL_FLOAT,         GL_NEAREST },	// 線形深度 (0 = なし)
+		}, false);
+	}
+	else {
+		layerTarget.resize(w, h);
 	}
 
 	// --- P1: G-buffer の深度 (床・障害物) をコピーし、蓄積バッファを 0 にする ---
@@ -191,7 +203,11 @@ void SplatSurface::draw(const MpmObject& mpmObject, const RenderTarget& gbuffer,
 	glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
 	accumTarget.bind();
 	const GLfloat zero[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-	for (int i = 0; i < 3; ++i) glClearBufferfv(GL_COLOR, i, zero);
+	// glClearBufferfv の番号は描画バッファの番号なので、4 枚すべてを描画バッファにしてから消す
+	// (前のフレームの最後に、被覆率の 3 番を外した設定が残っている)
+	const GLenum allBuffers[4] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3 };
+	glDrawBuffers(4, allBuffers);
+	for (int i = 0; i < 4; ++i) glClearBufferfv(GL_COLOR, i, zero);
 
 	// --- 円盤の描画の準備 ---
 	const float radius = settings.splatRadiusScale * settings.particleSpacing;
@@ -221,6 +237,22 @@ void SplatSurface::draw(const MpmObject& mpmObject, const RenderTarget& gbuffer,
 	glEnable(GL_DEPTH_TEST);
 	glDisable(GL_CULL_FACE);
 
+	// --- 被覆率: 床・障害物の深度とだけ比べ、視線上のすべての円盤の重みを足す (裏向きも含む) ---
+	const GLenum coverageOnly[4] = { GL_NONE, GL_NONE, GL_NONE, GL_COLOR_ATTACHMENT3 };
+	glDrawBuffers(4, coverageOnly);
+	setInt(drawProgram, "pass", 2);
+	setInt(drawProgram, "cullBackFacing", 0);
+	glDepthMask(GL_FALSE);
+	glDepthFunc(GL_LEQUAL);
+	glEnable(GL_BLEND);
+	glBlendEquation(GL_FUNC_ADD);
+	glBlendFunc(GL_ONE, GL_ONE);
+	glDrawArrays(GL_POINTS, 0, mpmObject.count);
+	glDisable(GL_BLEND);
+	const GLenum accumOnly[4] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_NONE };
+	glDrawBuffers(4, accumOnly);
+	setInt(drawProgram, "cullBackFacing", 1);
+
 	// --- P2: 可視性 (深度だけ。奥へずらした深度で、手前の表面の厚みを決める) ---
 	setInt(drawProgram, "pass", 0);
 	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
@@ -245,23 +277,35 @@ void SplatSurface::draw(const MpmObject& mpmObject, const RenderTarget& gbuffer,
 	if (compat) { glDisable(kPointSprite); if (smoothWasOn) glEnable(GL_POINT_SMOOTH); }
 	glEnable(GL_CULL_FACE);
 
-	// --- P5: 正規化して G-buffer へ (床・障害物より手前の画素だけ: GL_LESS) ---
-	gbuffer.bind();
-	glDepthFunc(GL_LESS);
+	// --- P4/P5: 正規化 ---
 	glUseProgram(normalizeProgram);
-	for (int i = 0; i < 3; ++i) {
+	for (int i = 0; i < 4; ++i) {
 		glActiveTexture(GL_TEXTURE0 + i);
 		glBindTexture(GL_TEXTURE_2D, accumTarget.colorTexture(i));
 	}
 	setInt(normalizeProgram, "accum0", 0);
 	setInt(normalizeProgram, "accum1", 1);
 	setInt(normalizeProgram, "accum2", 2);
+	setInt(normalizeProgram, "coverageTex", 3);
 	setMat4(normalizeProgram, "projection", projection);
 	setFloat(normalizeProgram, "coverageK", settings.coverageK);
-	setFloat(normalizeProgram, "opaqueAlpha", 0.0f);	// 段階 2: 円盤がかかった画素はすべて不透明として書く
+	setFloat(normalizeProgram, "opaqueAlpha", settings.opaqueAlpha);
 	glBindVertexArray(emptyVao);
+
+	// P4: splat 層へ (円盤がかかった画素すべて。深度は使わない)
+	layerTarget.bind();
+	for (int i = 0; i < 3; ++i) glClearBufferfv(GL_COLOR, i, zero);
+	glDisable(GL_DEPTH_TEST);
+	setInt(normalizeProgram, "target", 0);
+	glDrawArrays(GL_TRIANGLES, 0, 3);
+	glEnable(GL_DEPTH_TEST);
+
+	// P5: G-buffer へ (不透明な画素だけ。床・障害物より手前の画素だけ: GL_LESS)
+	gbuffer.bind();
+	glDepthFunc(GL_LESS);
+	setInt(normalizeProgram, "target", 1);
 	glDrawArrays(GL_TRIANGLES, 0, 3);
 	glBindVertexArray(0);
-	for (int i = 2; i >= 0; --i) { glActiveTexture(GL_TEXTURE0 + i); glBindTexture(GL_TEXTURE_2D, 0); }
+	for (int i = 3; i >= 0; --i) { glActiveTexture(GL_TEXTURE0 + i); glBindTexture(GL_TEXTURE_2D, 0); }
 	glUseProgram(0);
 }
