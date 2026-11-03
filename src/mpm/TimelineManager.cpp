@@ -3,7 +3,7 @@
 //==============================================================================
 #include "TimelineManager.h"
 #include "../core/Shader.h"
-#include "../mpm/MpmObject.h"
+#include "../mpm/MpmParticle.h"
 #include <GLFW/glfw3.h>
 
 // コンストラクタ

@@ -402,3 +402,4 @@ FodyWeavers.xsd
 
 # Custom settings
 *.csv
+.obsidian

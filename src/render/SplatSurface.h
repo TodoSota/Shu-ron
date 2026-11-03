@@ -25,7 +25,7 @@
 #include "RenderTarget.h"
 
 struct RenderSettings;
-struct MpmObject;
+struct IMpmObject;
 
 class SplatSurface {
 public:
@@ -41,11 +41,11 @@ public:
 
 	/// 密度格子と surfel バッファを作り直す (S1〜S3)
 	/// @param[in] worldScale シミュレーション領域の一辺 [m]
-	void prepare(const MpmObject& mpmObject, float worldScale, const RenderSettings& settings);
+	void prepare(const IMpmObject& mpmObject, float worldScale, const RenderSettings& settings);
 
 	/// 表面粒子を円盤として重ねて描き、G-buffer の色・法線・深度に書き込む (P1〜P5)
 	/// prepare() の後、G-buffer に床と障害物を描いた後に呼ぶ
-	void draw(const MpmObject& mpmObject, const RenderTarget& gbuffer, const glm::mat4& view, const glm::mat4& projection,
+	void draw(const IMpmObject& mpmObject, const RenderTarget& gbuffer, const glm::mat4& view, const glm::mat4& projection,
 		bool useDebugColor, const RenderSettings& settings, GLuint emptyVao);
 
 	/// surfel バッファ (粒子 1 個あたり vec4 × 2: 法線 + 表面らしさ、密度 + 勾配の強さ)

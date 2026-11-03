@@ -78,12 +78,6 @@
     <ClCompile Include="src\controller\InteractionController.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
-    <ClCompile Include="src\mpm\MpmObject.cpp">
-      <Filter>ソース ファイル</Filter>
-    </ClCompile>
-    <ClCompile Include="src\mpm\MpmSimulator.cpp">
-      <Filter>ソース ファイル</Filter>
-    </ClCompile>
     <ClCompile Include="src\mpm\TimelineManager.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
@@ -91,6 +85,27 @@
       <Filter>ソース ファイル</Filter>
     </ClCompile>
     <ClCompile Include="src\mpm\MpmEvaluator.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mpm\MpmParticle.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mpm\ssbo\MpmObjectSSBO.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mpm\ssbo\MpMSimulatorSSBO.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mpm\3dtexture\MpmObject3DTEX.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mpm\3dtexture\MpmSimulator3DTEX.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mpm\IMpmObject.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="src\mpm\IMpmSimulator.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
   </ItemGroup>
@@ -183,21 +198,6 @@
     <None Include="legacy\collide.comp">
       <Filter>コンピュートシェーダファイル</Filter>
     </None>
-    <None Include="src\mpm\shaders\mpm_setup.comp">
-      <Filter>コンピュートシェーダファイル</Filter>
-    </None>
-    <None Include="src\mpm\shaders\mpm_p2g.comp">
-      <Filter>コンピュートシェーダファイル</Filter>
-    </None>
-    <None Include="src\mpm\shaders\mpm_grid.comp">
-      <Filter>コンピュートシェーダファイル</Filter>
-    </None>
-    <None Include="src\mpm\shaders\mpm_g2p.comp">
-      <Filter>コンピュートシェーダファイル</Filter>
-    </None>
-    <None Include="src\mpm\shaders\mpm_move.comp">
-      <Filter>コンピュートシェーダファイル</Filter>
-    </None>
     <None Include="src\render\mesh.vert" />
     <None Include="src\render\mesh.frag" />
     <None Include="imgui.ini" />
@@ -206,9 +206,21 @@
     <None Include=".gitignore" />
     <None Include=".gitattributes" />
     <None Include="src\mpm\shaders\timeline_record.comp" />
-    <None Include="src\mpm\shaders\mpm_p2g_Linear.comp" />
-    <None Include="src\mpm\shaders\mpm_g2p_Linear.comp" />
     <None Include="src\mpm\shaders\mpm_evaluator.comp" />
+    <None Include="src\mpm\shaders\3dtexture\mpm_g2p_3dtex.comp" />
+    <None Include="src\mpm\shaders\3dtexture\mpm_g2p_Linear_3dtex.comp" />
+    <None Include="src\mpm\shaders\3dtexture\mpm_grid_3dtex.comp" />
+    <None Include="src\mpm\shaders\3dtexture\mpm_move_3dtex.comp" />
+    <None Include="src\mpm\shaders\3dtexture\mpm_p2g_3dtex.comp" />
+    <None Include="src\mpm\shaders\3dtexture\mpm_p2g_Linear_3dtex.comp" />
+    <None Include="src\mpm\shaders\3dtexture\mpm_setup_3dtex.comp" />
+    <None Include="src\mpm\shaders\ssbo\mpm_g2p_Linear_ssbo.comp" />
+    <None Include="src\mpm\shaders\ssbo\mpm_g2p_ssbo.comp" />
+    <None Include="src\mpm\shaders\ssbo\mpm_grid_ssbo.comp" />
+    <None Include="src\mpm\shaders\ssbo\mpm_move_ssbo.comp" />
+    <None Include="src\mpm\shaders\ssbo\mpm_p2g_Linear_ssbo.comp" />
+    <None Include="src\mpm\shaders\ssbo\mpm_p2g_ssbo.comp" />
+    <None Include="src\mpm\shaders\ssbo\mpm_setup_ssbo.comp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\core\Errorcheck.h">
@@ -271,13 +283,25 @@
     <ClInclude Include="src\controller\InteractionController.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
-    <ClInclude Include="src\mpm\MpmObject.h">
-      <Filter>ヘッダー ファイル</Filter>
-    </ClInclude>
-    <ClInclude Include="src\mpm\MpmSimulator.h">
-      <Filter>ヘッダー ファイル</Filter>
-    </ClInclude>
     <ClInclude Include="src\mpm\TimelineManager.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mpm\IMpmObject.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mpm\ssbo\MpmObjectSSBO.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mpm\ssbo\MpMSimulatorSSBO.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mpm\3dtexture\MpmObject3DTEX.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mpm\3dtexture\MpmSimulator3DTEX.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="src\mpm\IMpmSimulator.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
   </ItemGroup>

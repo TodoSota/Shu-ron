@@ -4,7 +4,7 @@
 #include "DustSystem.h"
 #include "RenderSettings.h"
 #include "../core/Shader.h"
-#include "../mpm/MpmObject.h"
+#include "../mpm/IMpmObject.h"
 #include "../mpm/MpmPhysics.h"
 #include <GLM/gtc/type_ptr.hpp>
 #include <iostream>
@@ -63,7 +63,7 @@ void DustSystem::clear() {
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
-void DustSystem::update(const MpmObject& mpmObject, const MpmPhysics& physics, float dt, float particleRadius, const RenderSettings& settings) {
+void DustSystem::update(const IMpmObject& mpmObject, const MpmPhysics& physics, float dt, float particleRadius, const RenderSettings& settings) {
 	if (dt <= 0.0f) return;
 	time += dt;
 	frameIndex++;
@@ -83,7 +83,7 @@ void DustSystem::update(const MpmObject& mpmObject, const MpmPhysics& physics, f
 		setFloat(emitProgram, "floorHeight", physics.f_height);
 		setFloat(emitProgram, "lifetime", settings.dustLifetime);
 		setFloat(emitProgram, "jitter", particleRadius);
-		glDispatchCompute((mpmObject.count + 63) / 64, 1, 1);
+		glDispatchCompute((mpmObject.getParticleCount() + 63) / 64, 1, 1);
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 	}
 

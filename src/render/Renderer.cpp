@@ -5,7 +5,7 @@
 
 #include "../core/Camera.h"
 #include "../core/shader.h"
-#include "../mpm/MpmObject.h"
+#include "../mpm/IMpmObject.h"
 #include "../mpm/MpmPhysics.h"
 #include "../sdf/SdfInstance.h"
 
@@ -139,7 +139,7 @@ void Renderer::drawFloor(const glm::mat4& view, const glm::mat4& projection, con
 }
 
 // MPMパーティクルの描画
-void Renderer::drawMpm(const MpmObject& MpmObject, const glm::mat4& view, const glm::mat4& projection, const glm::mat4& model, bool useDebugColor) {
+void Renderer::drawMpm(const IMpmObject& MpmObject, const glm::mat4& view, const glm::mat4& projection, const glm::mat4& model, bool useDebugColor) {
     glUseProgram(pointProgram);
 
     glm::mat4 mvp = projection * view * model; // アスペクト比は呼び出し元で補正推奨
@@ -152,7 +152,7 @@ void Renderer::drawMpm(const MpmObject& MpmObject, const glm::mat4& view, const 
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, MpmObject.getReadVbo());
 
     glBindVertexArray(MpmObject.getRenderVao());
-    glDrawArrays(GL_POINTS, 0, MpmObject.count);
+    glDrawArrays(GL_POINTS, 0, MpmObject.getParticleCount());
     glBindVertexArray(0);
 }
 
@@ -283,7 +283,7 @@ float Renderer::drawRadius() const {
 }
 
 // 粒子を球インポスタで描く (G-buffer とシャドウマップの両方で使う)
-void Renderer::drawSpheres(const MpmObject& mpmObject, const glm::mat4& view, const glm::mat4& projection, float viewportHeight, bool useDebugColor, bool surfelView) {
+void Renderer::drawSpheres(const IMpmObject& mpmObject, const glm::mat4& view, const glm::mat4& projection, float viewportHeight, bool useDebugColor, bool surfelView) {
     glUseProgram(sphereProgram);
     setMat4(sphereProgram, "view", view);
     setMat4(sphereProgram, "projection", projection);
@@ -310,7 +310,7 @@ void Renderer::drawSpheres(const MpmObject& mpmObject, const glm::mat4& view, co
     // 材質フラグを読むため、粒子バッファを SSBO としても束縛する
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mpmObject.getReadVbo());
     glBindVertexArray(mpmObject.getRenderVao());
-    glDrawArrays(GL_POINTS, 0, mpmObject.count);
+    glDrawArrays(GL_POINTS, 0, mpmObject.getParticleCount());
     glBindVertexArray(0);
 
     glDisable(GL_PROGRAM_POINT_SIZE);
@@ -328,7 +328,7 @@ void Renderer::drawMeshTo(GLuint program, const SdfInstance& obstacle, const glm
     glBindVertexArray(0);
 }
 
-void Renderer::drawScene(const MpmObject& mpmObject, const SdfInstance& obstacle, const MpmPhysics& physics,
+void Renderer::drawScene(const IMpmObject& mpmObject, const SdfInstance& obstacle, const MpmPhysics& physics,
     const glm::mat4& view, const glm::mat4& projection, int fbWidth, int fbHeight, bool useDebugColor) {
     if (fbWidth <= 0 || fbHeight <= 0) return;	// 最小化中
     timer.beginFrame();
@@ -517,7 +517,7 @@ void Renderer::drawScene(const MpmObject& mpmObject, const SdfInstance& obstacle
     glClearColor(0.8f, 0.8f, 0.8f, 1.0f);	// main.cpp の背景色に戻す (Points モード用)
 }
 
-void Renderer::updateDust(const MpmObject& mpmObject, const MpmPhysics& physics, float dt) {
+void Renderer::updateDust(const IMpmObject& mpmObject, const MpmPhysics& physics, float dt) {
     dust->update(mpmObject, physics, dt, settings.particleRadius(), settings);
 }
 

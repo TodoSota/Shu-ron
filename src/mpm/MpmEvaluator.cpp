@@ -2,6 +2,7 @@
 // MpmEvaluator.cpp : 評価・計測処理の実装
 //==============================================================================
 #include "MpmEvaluator.h"
+#include "MpmParticle.h" 
 #include "../core/Shader.h"
 #include "../core/Errorcheck.h"
 #include <iostream>

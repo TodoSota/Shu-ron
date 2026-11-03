@@ -33,7 +33,7 @@
 #include "PassTimer.h"
 
 // 前方宣言
-struct MpmObject;
+struct IMpmObject;
 class SdfInstance;
 struct MpmPhysics;
 
@@ -89,7 +89,7 @@ private:
 
     // --- Spheres モードの描画ヘルパー ---
     /// @param[in] surfelView Splat モードの表面らしさ・法線・密度を色にする (G-buffer のときだけ true)
-    void drawSpheres(const MpmObject& mpmObject, const glm::mat4& view, const glm::mat4& projection, float viewportHeight, bool useDebugColor, bool surfelView = false);
+    void drawSpheres(const IMpmObject& mpmObject, const glm::mat4& view, const glm::mat4& projection, float viewportHeight, bool useDebugColor, bool surfelView = false);
     float drawRadius() const;       // 現在のモードでの球の描画半径 [m]
     void updateFloorQuad(const MpmPhysics& physics);
     void drawMeshTo(GLuint program, const SdfInstance& obstacle, const glm::mat4& view, const glm::mat4& projection);
@@ -113,7 +113,7 @@ public:
     void drawFloor(const glm::mat4& view, const glm::mat4& projection, const glm::mat4& model, const MpmPhysics& physics);
 
     // MPMパーティクルの描画
-    void drawMpm(const MpmObject& MpmObject, const glm::mat4& view, const glm::mat4& projection, const glm::mat4& model, bool useDebugColor);
+    void drawMpm(const IMpmObject& MpmObject, const glm::mat4& view, const glm::mat4& projection, const glm::mat4& model, bool useDebugColor);
 
     // 障害物（SDFインスタンス）の描画
     void drawObstacle(const SdfInstance& obstacle, const glm::mat4& view, const glm::mat4& projection, const glm::mat4& model);
@@ -127,11 +127,11 @@ public:
     /// 陰影付きでシーン (床・障害物・粒子) を描く (Spheres / Surface モード)
     /// 画面 (既定のフレームバッファ) に色と深度を書くので、この後に枠線などを重ねて描ける
     /// @param[in] framebufferWidth, framebufferHeight 画面のフレームバッファの大きさ [px]
-    void drawScene(const MpmObject& mpmObject, const SdfInstance& obstacle, const MpmPhysics& physics,
+    void drawScene(const IMpmObject& mpmObject, const SdfInstance& obstacle, const MpmPhysics& physics,
         const glm::mat4& view, const glm::mat4& projection, int framebufferWidth, int framebufferHeight, bool useDebugColor);
 
     /// 粉塵を発生させて dt 秒進める (シミュレーションを進めたフレームに 1 回呼ぶ)
-    void updateDust(const MpmObject& mpmObject, const MpmPhysics& physics, float dt);
+    void updateDust(const IMpmObject& mpmObject, const MpmPhysics& physics, float dt);
 
     /// 粉塵をすべて消す (巻き戻し・再起動のとき)
     void clearDust();

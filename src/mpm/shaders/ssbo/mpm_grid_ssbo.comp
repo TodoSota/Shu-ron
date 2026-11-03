@@ -1,0 +1,144 @@
+#version 430 core
+
+// 8*8*8 のスレッドグループでグリッド全体を走査
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+uniform int u_gridSize;
+
+// SSBO用の格子データ構造
+struct GridNode {
+	uint x;
+	uint y;
+	uint z;
+	uint m;
+};
+
+// SSBOバインディング (binding = 2)
+layout(std430, binding = 2) buffer GridBuffer {
+	GridNode grid[];
+};
+
+// SDF テクスチャ 1枚 (既存実装通り binding = 4 を維持)
+layout(binding = 4) uniform sampler3D sdf_tex;
+
+// MPMの粒子群の物理パラメータ (既存コードと完全同一)
+layout(std140, binding = 1) uniform MPMPhysics {
+	vec3 gravity;		float timestep;
+	vec3 f_normal;		float f_height;
+	float f_restitution;float f_friction;
+	float dx;			float inv_dx;
+	float p_restitution;float p_vol;
+	float p_mu;			float p_lambda;
+	float p_mass;		float p_radius;
+	float p_overlap;	float p_padding;
+	vec4 obstacle_sphere; 
+	vec4 obstacle_velocity;
+};
+
+// SDF のユニフォーム変数 (既存コードと完全同一)
+uniform mat4 sdf_model;
+uniform mat4 sdf_inv_model;
+uniform vec3 sdf_velocity;
+uniform vec3 sdf_aabb_min;
+uniform vec3 sdf_aabb_max;
+uniform vec3 sdf_angular_velocity; 
+uniform vec3 sdf_center;           
+
+void main() {
+	ivec3 coords = ivec3(gl_GlobalInvocationID.xyz);
+
+	// 1. 最速の範囲外チェック (uintキャストによるオーバーフロー判定)
+	if (uint(coords.x) >= uint(u_gridSize) || 
+	    uint(coords.y) >= uint(u_gridSize) || 
+	    uint(coords.z) >= uint(u_gridSize)) {
+		return;
+	}
+
+	// 2. 1次元インデックスの計算
+	uint g_idx = uint(coords.x) + uint(u_gridSize) * (uint(coords.y) + uint(u_gridSize) * uint(coords.z));
+
+	// 3. グリッドデータ読み込み (imageLoadから配列アクセスに変更)
+	float m = uintBitsToFloat(grid[g_idx].m);
+	if (m <= 1e-7) return;	// 質量がほぼゼロなら処理スキップ
+
+	vec3 v = vec3(
+        uintBitsToFloat(grid[g_idx].x),
+        uintBitsToFloat(grid[g_idx].y),
+        uintBitsToFloat(grid[g_idx].z)
+    );
+
+	// 4. 速度算出と外力(重力含む)の適用
+	v /= m;
+	v += gravity * timestep;
+
+	// 5. 境界条件・当たり判定 (物理計算は既存実装を完全に維持)
+	vec3 pos = (vec3(coords) + vec3(0.5)) * dx;
+	float dist = dot(pos, f_normal) - f_height;
+
+	if (dist < 0.0) {
+		float v_normal = dot(v, f_normal);
+		if (v_normal < 0.0) {
+			vec3 vn = f_normal * v_normal;
+			vec3 vt = v - vn;
+			float vt_len = length(vt);
+			if(vt_len > 1e-7){
+				float friction_factor = max(0.0, 1.0 - f_friction * abs(v_normal) / vt_len);
+				vt *= friction_factor;
+			}
+			v = vt - f_restitution * vn;
+		}
+	}
+
+	// SDF を追加するための判定ロジック部分
+	vec4 pos_local_vec4 = sdf_inv_model * vec4(pos, 1.0);
+	vec3 pos_local = pos_local_vec4.xyz;
+
+	if (all(greaterThanEqual(pos_local, sdf_aabb_min)) && all(lessThanEqual(pos_local, sdf_aabb_max))) {
+		vec3 uvw = (pos_local - sdf_aabb_min) / (sdf_aabb_max - sdf_aabb_min);
+		float dist_local = texture(sdf_tex, uvw).r;
+		float dist_world = dist_local * length(vec3(sdf_model[0]));
+    
+		if (dist_world < p_radius) {
+			vec3 texSize = vec3(textureSize(sdf_tex, 0));
+			vec3 texel = 1.0 / texSize;						
+			vec3 epsX = vec3(texel.x, 0.0, 0.0);
+			vec3 epsY = vec3(0.0, texel.y, 0.0);
+			vec3 epsZ = vec3(0.0, 0.0, texel.z);
+        
+			float nx = (texture(sdf_tex, uvw + epsX).r - texture(sdf_tex, uvw - epsX).r) / (2.0 * texel.x);
+			float ny = (texture(sdf_tex, uvw + epsY).r - texture(sdf_tex, uvw - epsY).r) / (2.0 * texel.y);
+			float nz = (texture(sdf_tex, uvw + epsZ).r - texture(sdf_tex, uvw - epsZ).r) / (2.0 * texel.z);
+        
+			vec3 normal_local = normalize(vec3(nx, ny, nz));
+			vec3 normal_world = normalize(mat3(transpose(sdf_inv_model)) * normal_local);
+        
+			vec3 r = pos - sdf_center;
+			vec3 point_velocity = sdf_velocity + cross(sdf_angular_velocity, r);
+			vec3 rel_vel = v - point_velocity;
+			float vn = dot(rel_vel, normal_world);
+
+			if (dist_world < p_radius && vn < 0.0) {
+				vec3 vt = rel_vel - vn * normal_world;
+				float vt_len = length(vt);
+				float mu = f_friction;
+				vec3 new_rel_vel = vt;
+
+				if (vt_len > 1e-6) {
+					float max_friction = -mu * vn;
+					if (vt_len < max_friction) {
+						new_rel_vel = vec3(0.0);
+					} else {
+						new_rel_vel = vt * (1.0 - max_friction / vt_len);
+					}
+				}
+				v = point_velocity + new_rel_vel;
+			}
+		}
+	}
+
+	// 6. 更新されたデータを戻す (imageStoreから配列アクセスに変更)
+	// 質量は更新されていないので書き込み不要
+	grid[g_idx].x = floatBitsToUint(v.x * m);
+	grid[g_idx].y = floatBitsToUint(v.y * m);
+	grid[g_idx].z = floatBitsToUint(v.z * m);
+}

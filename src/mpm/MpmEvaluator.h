@@ -13,7 +13,6 @@
 #include <string>
 #include <vector>
 #include <map>
-#include "MpmObject.h" 
 
 // --- Evaluator の機能制御オプション ---
 struct EvaluatorOptions {

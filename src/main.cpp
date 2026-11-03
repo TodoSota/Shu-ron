@@ -15,11 +15,15 @@
 #include "core/Errorcheck.h"	// OpenGL のエラーチェック
 #include "core/MeshResource.h"	// SDFに存在するオブジェクトのデータ
 #include "sdf/SdfInstance.h"	// SDFに登録するオブジェクト
-#include "mpm/TimelineManager.h"// MPM シミュレーションの履歴
-#include "mpm/MpmObject.h"		// MPM 用の描画データパッケージ
-#include "mpm/MpmSimulator.h"	// MPM のシミュレーション実行クラス
 #include "controller/InteractionController.h" // プレイヤー操作の処理
 #include "render/Renderer.h"
+
+// --- MPM シミュレーションに関するインクルード
+#include "mpm/TimelineManager.h"// MPM シミュレーションの履歴
+#include "mpm/IMpmObject.h"		// MPM 用の描画データパッケージ
+#include "mpm/IMpmSimulator.h"	// MPM のシミュレーション実行クラス
+#include "mpm/3dtexture/MpmSimulator3DTEX.h" // テクスチャ版の実装
+#include "mpm/ssbo/MpmSimulatorSSBO.h"     // SSBO版の実装
 
 // オブジェクトロード・ライブラリ
 #define TINYOBJLOADER_IMPLEMENTATION // 必ずインクルードの前に書く
@@ -75,6 +79,24 @@ MpmPhysics resetMpmSimParam(MpmPhysics mpmSimParam, int currentGrid) {
 	mpmSimParam.p_overlap = particleRadius * 0.01f;
 
 	return mpmSimParam;
+}
+
+/// シミュレーターを生成する関数
+/// @note 1 : SSBO, それ以外 : 3Dテクスチャ版 が生成されるようになっている
+/// @param [in] simMode シミュレーションの種類を指定する数
+/// @param [in] particleCount 粒子数
+/// @param [in] gridSize グリッドの分割数
+/// @param [in] worldScale シミュレーション領域の縮尺
+/// @param [in] useLinear 線形補間の方式を使用するか
+std::unique_ptr<IMpmSimulator> createSimulator(int simMode, int particleCount, int gridSize, float worldScale, bool useLinear) {
+	if (simMode == 1) {
+		std::cout << "Creating Simulator: SSBO mode" << std::endl;
+		return std::make_unique<MpmSimulatorSSBO>(particleCount, gridSize, worldScale, useLinear);
+	}
+	else {
+		std::cout << "Creating Simulator: 3D Texture mode" << std::endl;
+		return std::make_unique<MpmSimulator3DTEX>(particleCount, gridSize, worldScale, useLinear);
+	}
 }
 
 /// メインプログラム
@@ -230,17 +252,20 @@ auto main() -> int {
 	//--------------------------------------------------------------------------
 	// 5. シミュレーション関連オブジェクトの生成
 	//--------------------------------------------------------------------------
-	// 起動時にコンソールから補間方式を選択させる
-	//   ※ 0 で選ばれるのは実際には 2次 (quadratic) B スプライン (mpm_p2g.comp)
+	// 起動時にコンソールから シミュレーション種類 and 補間方式を選択させる
+	int simModeInput = 0;
+	std::cout << "Select MPM Memory Mode:\n  0: 3D Texture (Base)\n  1: SSBO (Test)\n> ";
+	std::cin >> simModeInput;
+
 	int interpInput = 1;
 	std::cout << "Select MPM Interpolation Method:\n";
-	std::cout << "  0: Cubic B-Spline\n" << "  1: Linear\n";
+	std::cout << "  0: Quadratic B-Spline\n" << "  1: Linear\n";
 	std::cout << "> ";
 	std::cin >> interpInput;
 	bool useLinear = (interpInput != 0);
 
 	// シミュレーション処理クラスのインスタンス生成
-	auto mpmSimulator = std::make_unique< MpmSimulator>(currentParticleCount, currentGrid, kWorldScale, useLinear);
+	std::unique_ptr<IMpmSimulator> mpmSimulator = createSimulator(simModeInput, currentParticleCount, currentGrid, kWorldScale, useLinear);
 
 	// 粒子の生成
 	//   粒子数に比例して初期立方体の体積を変え (1 辺は粒子数の立方根に比例)、粒子の配置密度を一定に保つ
@@ -314,7 +339,7 @@ auto main() -> int {
 			// コマ送り要求完了のためリセット
 			stepFrame = false;
 			// シミュレーション状況をタイムラインへ記録 (サブステップごとではなく、描画 1 フレームに 1 回)
-			timeline->recordFrame(mpmSimulator->getReadVbo(), &obstacle);
+			timeline->recordFrame(mpmSimulator->getMpmObject().getReadVbo(), &obstacle);
 			// シミュレーションの FPS 状況を評価クラスへ送信
 			float currentFramerate = ImGui::GetIO().Framerate;
 			mpmSimulator->getEvaluator().recordAppFps(renderFrame, currentFramerate, 1000.0f / currentFramerate);
@@ -402,11 +427,12 @@ auto main() -> int {
 			snprintf(expIdStr, sizeof(expIdStr), "E%02d", expId);
 
 			// --- 補間方式の文字列化 ---
-			std::string interpStr = (interpInput == 0) ? "CubicBSpline" : "Linear";
+			std::string simModeStr = (simModeInput == 0) ? "TEX" : "SSBO";
+			std::string interpStr = (interpInput == 0) ? "QuadraticBSpline" : "Linear";
 
 			// --- ベースファイル名の構築 ---
 			// 形式: [ExperimentID]_[Particle]_[Grid]_[Interpolation]_[Case/Note]
-			std::string baseName = std::string(expIdStr) + "_p" + std::to_string(currentParticleCount) + "_g" + std::to_string(currentGrid) + "_" + interpStr + "_" + std::string(note);
+			std::string baseName = std::string(expIdStr) + "_" + simModeStr + "_p" + std::to_string(currentParticleCount) + "_g" + std::to_string(currentGrid) + "_" + interpStr + "_" + std::string(note);
 
 			// 各種CSVのファイル名を構築
 			std::string perfFile = baseName + "_perf.csv";
@@ -555,6 +581,7 @@ auto main() -> int {
 		ImGui::TextColored(ImVec4(0.2f, 0.8f, 1.0f, 1.0f), "[ Simulation Restart Settings ]");
 
 		// UIで入力するための変数（staticで保持）
+		static int inputSimMode = simModeInput;
 		static int inputParticleCount = currentParticleCount;
 		static int inputGrid = currentGrid;
 		static int inputInterpolation = interpInput;
@@ -565,6 +592,7 @@ auto main() -> int {
 
 		if (ImGui::Button("Apply & Restart Simulation")) {
 			// 現在稼働中の変数を更新
+			simModeInput = inputSimMode;
 			currentParticleCount = inputParticleCount;
 			currentGrid = inputGrid;
 			interpInput = inputInterpolation;
@@ -572,7 +600,7 @@ auto main() -> int {
 
 			// ===== ここで古いインスタンスが破棄され、新しいインスタンスが生成される =====
 			//   粒子数と格子解像度は GPU バッファのサイズを決めるので、変更するときはオブジェクトを作り直す
-			mpmSimulator = std::make_unique<MpmSimulator>(currentParticleCount, currentGrid, kWorldScale, useLinear);
+			mpmSimulator = createSimulator(simModeInput, currentParticleCount, currentGrid, kWorldScale, useLinear);
 			timeline = std::make_unique<TimelineManager>(maxFrames, currentParticleCount, 1);
 
 			// 粒子の再配置と物理パラメータの再適用

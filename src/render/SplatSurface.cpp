@@ -4,7 +4,7 @@
 #include "SplatSurface.h"
 #include "RenderSettings.h"
 #include "../core/Shader.h"
-#include "../mpm/MpmObject.h"
+#include "../mpm/IMpmObject.h"
 #include <GLM/gtc/type_ptr.hpp>
 #include <algorithm>
 #include <cmath>
@@ -83,8 +83,8 @@ void SplatSurface::ensureSurfels(GLsizei count) {
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
-void SplatSurface::prepare(const MpmObject& mpmObject, float worldScale, const RenderSettings& settings) {
-	const GLsizei count = mpmObject.count;
+void SplatSurface::prepare(const IMpmObject& mpmObject, float worldScale, const RenderSettings& settings) {
+	const GLsizei count = mpmObject.getParticleCount();
 	if (count <= 0) return;
 
 	// --- 格子の大きさ: セルの一辺 h = densityCellScale × 粒子間隔。セル数が上限を超えたら h を広げる ---
@@ -167,9 +167,9 @@ void SplatSurface::prepare(const MpmObject& mpmObject, float worldScale, const R
 	glUseProgram(0);
 }
 
-void SplatSurface::draw(const MpmObject& mpmObject, const RenderTarget& gbuffer, const glm::mat4& view, const glm::mat4& projection,
+void SplatSurface::draw(const IMpmObject& mpmObject, const RenderTarget& gbuffer, const glm::mat4& view, const glm::mat4& projection,
 	bool useDebugColor, const RenderSettings& settings, GLuint emptyVao) {
-	if (surfels == 0 || mpmObject.count <= 0) return;
+	if (surfels == 0 || mpmObject.getParticleCount() <= 0) return;
 	const int w = gbuffer.getWidth(), h = gbuffer.getHeight();
 
 	// 蓄積用のターゲット (深度は G-buffer と同じ D32F。P1 でコピーするため形式を揃える)
@@ -247,7 +247,7 @@ void SplatSurface::draw(const MpmObject& mpmObject, const RenderTarget& gbuffer,
 	glEnable(GL_BLEND);
 	glBlendEquation(GL_FUNC_ADD);
 	glBlendFunc(GL_ONE, GL_ONE);
-	glDrawArrays(GL_POINTS, 0, mpmObject.count);
+	glDrawArrays(GL_POINTS, 0, mpmObject.getParticleCount());
 	glDisable(GL_BLEND);
 	const GLenum accumOnly[4] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_NONE };
 	glDrawBuffers(4, accumOnly);
@@ -258,7 +258,7 @@ void SplatSurface::draw(const MpmObject& mpmObject, const RenderTarget& gbuffer,
 	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
 	glDepthMask(GL_TRUE);
 	glDepthFunc(GL_LESS);
-	glDrawArrays(GL_POINTS, 0, mpmObject.count);
+	glDrawArrays(GL_POINTS, 0, mpmObject.getParticleCount());
 
 	// --- P3: 蓄積 (厚みの内側の円盤を加算。深度は書かない) ---
 	setInt(drawProgram, "pass", 1);
@@ -268,7 +268,7 @@ void SplatSurface::draw(const MpmObject& mpmObject, const RenderTarget& gbuffer,
 	glEnable(GL_BLEND);
 	glBlendEquation(GL_FUNC_ADD);
 	glBlendFunc(GL_ONE, GL_ONE);
-	glDrawArrays(GL_POINTS, 0, mpmObject.count);
+	glDrawArrays(GL_POINTS, 0, mpmObject.getParticleCount());
 	glDisable(GL_BLEND);
 	glDepthMask(GL_TRUE);
 

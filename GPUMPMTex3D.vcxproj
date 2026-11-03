@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -125,10 +125,15 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\mpm\IMpmSimulator.cpp" />
+    <ClCompile Include="src\mpm\IMpmObject.cpp" />
+    <ClCompile Include="src\mpm\MpmParticle.h" />
+    <ClCompile Include="src\mpm\ssbo\MpmObjectSSBO.cpp" />
+    <ClCompile Include="src\mpm\ssbo\MpMSimulatorSSBO.cpp" />
+    <ClCompile Include="src\mpm\3dtexture\MpmObject3DTEX.cpp" />
+    <ClCompile Include="src\mpm\3dtexture\MpmSimulator3DTEX.cpp" />
     <ClCompile Include="src\mpm\MpmEvaluator.cpp" />
     <ClCompile Include="src\mpm\MpmEvaluator.h" />
-    <ClCompile Include="src\mpm\MpmSimulator.cpp" />
-    <ClCompile Include="src\mpm\MpmObject.cpp" />
     <ClCompile Include="src\controller\InteractionController.cpp" />
     <ClCompile Include="src\render\Renderer.cpp" />
     <ClCompile Include="src\render\RenderTarget.cpp" />
@@ -157,15 +162,22 @@
     <None Include="legacy\collide.comp" />
     <None Include="LICENSE" />
     <None Include="README.md" />
+    <None Include="src\mpm\shaders\3dtexture\mpm_g2p_3dtex.comp" />
+    <None Include="src\mpm\shaders\3dtexture\mpm_g2p_Linear_3dtex.comp" />
+    <None Include="src\mpm\shaders\3dtexture\mpm_grid_3dtex.comp" />
+    <None Include="src\mpm\shaders\3dtexture\mpm_move_3dtex.comp" />
+    <None Include="src\mpm\shaders\3dtexture\mpm_p2g_3dtex.comp" />
+    <None Include="src\mpm\shaders\3dtexture\mpm_p2g_Linear_3dtex.comp" />
+    <None Include="src\mpm\shaders\3dtexture\mpm_setup_3dtex.comp" />
     <None Include="src\mpm\shaders\mpm_evaluator.comp" />
-    <None Include="src\mpm\shaders\mpm_g2p.comp" />
-    <None Include="src\mpm\shaders\mpm_g2p_Linear.comp" />
-    <None Include="src\mpm\shaders\mpm_grid.comp" />
-    <None Include="src\mpm\shaders\mpm_move.comp" />
-    <None Include="src\mpm\shaders\mpm_p2g.comp" />
-    <None Include="src\mpm\shaders\mpm_p2g_Linear.comp" />
-    <None Include="src\mpm\shaders\mpm_setup.comp" />
     <None Include="packages.config" />
+    <None Include="src\mpm\shaders\ssbo\mpm_g2p_Linear_ssbo.comp" />
+    <None Include="src\mpm\shaders\ssbo\mpm_g2p_ssbo.comp" />
+    <None Include="src\mpm\shaders\ssbo\mpm_grid_ssbo.comp" />
+    <None Include="src\mpm\shaders\ssbo\mpm_move_ssbo.comp" />
+    <None Include="src\mpm\shaders\ssbo\mpm_p2g_Linear_ssbo.comp" />
+    <None Include="src\mpm\shaders\ssbo\mpm_p2g_ssbo.comp" />
+    <None Include="src\mpm\shaders\ssbo\mpm_setup_ssbo.comp" />
     <None Include="src\mpm\shaders\timeline_record.comp" />
     <None Include="src\render\mesh.frag" />
     <None Include="src\render\mesh.vert" />
@@ -199,9 +211,13 @@
     <None Include="legacy\update.comp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="src\mpm\MpmSimulator.h" />
-    <ClInclude Include="src\mpm\MpmObject.h" />
+    <ClInclude Include="src\mpm\IMpmSimulator.h" />
+    <ClInclude Include="src\mpm\IMpmObject.h" />
+    <ClInclude Include="src\mpm\ssbo\MpmObjectSSBO.h" />
+    <ClInclude Include="src\mpm\ssbo\MpMSimulatorSSBO.h" />
     <ClInclude Include="src\controller\InteractionController.h" />
+    <ClInclude Include="src\mpm\3dtexture\MpmObject3DTEX.h" />
+    <ClInclude Include="src\mpm\3dtexture\MpmSimulator3DTEX.h" />
     <ClInclude Include="src\mpm\MpmPhysics.h" />
     <ClInclude Include="src\render\Renderer.h" />
     <ClInclude Include="src\render\RenderTarget.h" />

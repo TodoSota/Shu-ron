@@ -16,7 +16,7 @@
 #include <GLM/glm.hpp>
 
 struct RenderSettings;
-struct MpmObject;
+struct IMpmObject;
 struct MpmPhysics;
 
 class DustSystem {
@@ -30,7 +30,7 @@ public:
 	DustSystem& operator=(const DustSystem&) = delete;
 
 	/// 粉塵を発生させ、dt 秒だけ進める (シミュレーションを進めたフレームにだけ呼ぶ)
-	void update(const MpmObject& mpmObject, const MpmPhysics& physics, float dt, float particleRadius, const RenderSettings& settings);
+	void update(const IMpmObject& mpmObject, const MpmPhysics& physics, float dt, float particleRadius, const RenderSettings& settings);
 
 	/// すべての粉塵を消す (巻き戻し・再起動のとき)
 	void clear();
