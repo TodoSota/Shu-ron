@@ -15,12 +15,25 @@
 class SdfInstance;
 
 class IMpmSimulator {
+    GLuint faultBuffer{ 0 };
+
 protected:
+    // C-9 diagnostics for all transfer pipelines.
+    void initDeformationValidation();
+    void prepareDeformationValidation();
+    bool checkDeformationFault(const SdfInstance& obstacle);
+
     // --- 共通データ ---
     std::unique_ptr<IMpmObject> mpmObject; // MpmObject は方式で異なるのでポインタで多態的に保持
     MpmEvaluator evaluator;
     float worldScale;
     int stepCount{ 0 };
+    // Keep the caller's material density when switching particle geometry.
+    MpmPhysics requestedPhysics{};
+    bool hasPhysics{ false };
+    bool sphereParticles{ false };
+    float sphereParticleVolume{ 0.0f };
+    std::string simulationError;
 
     // --- 共通のOpenGLリソース ---
     GLuint physicsUbo{ 0 };
@@ -59,8 +72,10 @@ public:
     /// パーティクルの初期化・MPM 用の点群データ作成
     /// @param[in] scale 点群データのスケール
     /// @param[in] sphere 球状に配置するなら true 、立方体状に配置するなら false
+    /// @note 球半径はworldScale*0.1*scale。球の粒子体積は球体積/粒子数、密度はsetPhysicsの指定を維持する。
     void resetParticles(float scale, bool sphere = true);
     /// 物理パラメータ(UBO)をGPUに転送・更新する
+    /// @note 球配置ではp_vol/p_massを配置体積と指定密度から再計算する。立方体は指定値を使う。
     void setPhysics(const MpmPhysics& physics);
 
     /// コンピュートシェーダーを実行し、シミュレーションを1ステップ進める
@@ -71,4 +86,5 @@ public:
     const IMpmObject& getMpmObject() const { return *mpmObject; }
     MpmEvaluator& getEvaluator() { return evaluator; }
     int getStepCount() const { return stepCount; }
+    const std::string& getSimulationError() const { return simulationError; }
 };

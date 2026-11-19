@@ -25,7 +25,7 @@ MpmSimulatorSSBO::MpmSimulatorSSBO(GLsizei particleCount, int gridSize, float wo
         // 通常
         mpmP2G = loadCompute("src/mpm/shaders/ssbo/mpm_p2g_ssbo.comp");
         mpmG2P = loadCompute("src/mpm/shaders/ssbo/mpm_g2p_ssbo.comp");
-        std::cout << "Loaded MPM Shaders (SSBO): Cubic B-Spline Interpolation" << std::endl;
+        std::cout << "Loaded MPM Shaders (SSBO): Quadratic B-Spline Interpolation" << std::endl;
     }
     else {
         // Linear
@@ -40,6 +40,7 @@ MpmSimulatorSSBO::MpmSimulatorSSBO(GLsizei particleCount, int gridSize, float wo
 
     // 共通部分の Uniform の初期化
     initCommonUniforms();
+    initDeformationValidation();
 
     // SSBO の Uniform の初期化
     setupGridSizeLoc = glGetUniformLocation(mpmSetup, "u_gridSize");
@@ -51,6 +52,8 @@ MpmSimulatorSSBO::MpmSimulatorSSBO(GLsizei particleCount, int gridSize, float wo
 /// コンピュートシェーダーを実行し、シミュレーションを1ステップ進める
 /// @param[in] obstacle 衝突判定を行うSDF障害物
 void MpmSimulatorSSBO::step(const SdfInstance& obstacle) {
+    if (!simulationError.empty()) return;
+    prepareDeformationValidation();
     GLuint readVbo = mpmObject->getReadVbo();
     GLuint writeVbo = mpmObject->getWriteVbo();
     int gridSize = mpmObject->getGridSize();
@@ -101,6 +104,8 @@ void MpmSimulatorSSBO::step(const SdfInstance& obstacle) {
     evaluator.endTimer("P2G");
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
+    if (checkDeformationFault(obstacle)) return;
+
     // [Grid]
     glUseProgram(mpmGrid);
     glUniform1i(gridGridSizeLoc, gridSize); // グリッドサイズ送信
@@ -117,6 +122,7 @@ void MpmSimulatorSSBO::step(const SdfInstance& obstacle) {
     evaluator.endTimer("G2P");
     // パーティクル出力(VBO)用のバリアとSSBO用のバリアの論理和
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
+    if (checkDeformationFault(obstacle)) return;
 
     // ダブルバッファの切り替え
     mpmObject->swapBuffers();

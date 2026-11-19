@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 
 //==============================================================================
 // MpmPhysics.h : シミュレーション全体で共通の物理パラメータ (UBO)
@@ -7,7 +8,7 @@
 //       std140 では vec3 が 16 バイト境界に揃えられるため、vec3 の直後に float を 1 個置いて
 //       16 バイトを埋める配置にしている (gravity + timestep, f_normal + f_height)。
 // 単位: SI 単位系 (m, s, kg, Pa) を想定している。
-// 未使用: p_restitution, p_overlap, obstacle_sphere, obstacle_velocity は現在どのシェーダーでも使われていない。
+// C-6: 未使用スロットを予約領域として保持し、診断バイナリとUBOの配置を維持する。
 //==============================================================================
 #include <GL/glew.h>
 #include <GLM/glm.hpp>
@@ -20,23 +21,28 @@ struct MpmPhysics {
 	alignas(16) glm::vec3 f_normal;		// 地面の法線
 	alignas(4) GLfloat f_height;		// 地面の高さ
 
-	alignas(4) GLfloat f_restitution;	// 地面の反発係数
+	alignas(4) GLfloat f_restitution; // Reserved (C-6)
 	alignas(4) GLfloat f_friction;		// 地面の摩擦係数
 	alignas(4) GLfloat dx;				// グリッドの間隔
 	alignas(4) GLfloat inv_dx;			// 間隔の逆数
 
 	// 粒子
-	alignas(4) GLfloat p_restitution;	// 粒子の反発係数
+	alignas(4) GLfloat p_restitution; // Reserved (C-6)
 	alignas(4) GLfloat p_vol;			// 粒子の体積
 	alignas(4) GLfloat p_mu;			// 粒子のラメ係数 (第 2 定数 μ = せん断弾性係数 E / 2(1+ν))
 	alignas(4) GLfloat p_lambda;		// 粒子のラメ係数 (第 1 定数 λ = Eν / (1+ν)(1-2ν))
 
 	alignas(4) GLfloat p_mass;			// 粒子の質量
 	alignas(4) GLfloat p_radius;		// 粒子の半径
-	alignas(4) GLfloat p_overlap;		// 粒子の重なり
-	alignas(4) GLfloat p_padding;		// 調整
+	alignas(4) GLfloat p_overlap; // Reserved (C-6)
+	alignas(4) GLfloat p_padding; // Reserved (C-6)
 
 	// 障害物
-	alignas(16) glm::vec4 obstacle_sphere; // 静的物体の仮設
-	alignas(16) glm::vec4 obstacle_velocity; // 静的物体の仮設
+	alignas(16) glm::vec4 obstacle_sphere; // Reserved (C-6)
+	alignas(16) glm::vec4 obstacle_velocity; // Reserved (C-6)
 };
+
+static_assert(sizeof(MpmPhysics) == 112, "MPM physics UBO size");
+static_assert(offsetof(MpmPhysics, timestep) == 12 && offsetof(MpmPhysics, f_height) == 28 &&
+              offsetof(MpmPhysics, p_vol) == 52 && offsetof(MpmPhysics, p_radius) == 68 &&
+              offsetof(MpmPhysics, obstacle_velocity) == 96, "MPM physics std140 offsets");

@@ -9,6 +9,9 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
+#include <filesystem>
+#include <regex>
+#include <algorithm>
 
 /// シェーダーオブジェクトのコンパイル結果を表示
 /// 他から使用しないので static
@@ -151,31 +154,61 @@ auto createProgram(const std::string& vsrc, const std::string& fsrc, const std::
 	return 0;
 }
 
-/// シェーダーのソースファイルを読み込む
-/// @param[in] name シェーダーのソース名
-/// @return 読み込みに成功すれば true ,失敗したら false
-static auto readShaderSource(const std::string& name) -> std::string {
-	// ソースファイルを開く
-	std::ifstream  file(name, std::ios::binary);
+// Expand quoted includes relative to each shader file. GLSL source numbers map
+// back to the paths printed alongside compile and link diagnostics.
+namespace {
+using ShaderPaths = std::vector<std::filesystem::path>;
 
-	// ファイルを開けない場合
-	if (file.fail()) {
-		std::cerr << "Error: Cant not open Source file: " << name << std::endl;
-		return "";
-	}
+bool appendShaderSource(const std::filesystem::path& path, ShaderPaths& stack,
+                        ShaderPaths& sources, std::ostringstream& output) {
+    const auto source = path.lexically_normal();
+    if (stack.size() >= 32 || std::find(stack.begin(), stack.end(), source) != stack.end()) {
+        std::cerr << "Recursive shader include: " << source << '\n';
+        return false;
+    }
+    std::ifstream file(source, std::ios::binary);
+    if (!file) {
+        std::cerr << "Cannot open shader source: " << source << '\n';
+        return false;
+    }
 
-	// ファイル全体を読み込む
-	std::stringstream buffer;
-	buffer << file.rdbuf();
+    const auto id = sources.size();
+    const bool included = !stack.empty();
+    stack.push_back(source);
+    sources.push_back(source);
+    if (included) output << "#line 1 " << id << '\n';
 
-	// 読み込み失敗時
-	if (file.fail()) {
-		std::cerr << "Error: Could not read source file: " << name << std::endl;
-		return "";
-	}
+    static const std::regex includePattern(R"shader(^[ \t]*#[ \t]*include[ \t]+"([^"]+)"[ \t\r]*$)shader");
+    std::string line;
+    std::smatch match;
+    int lineNumber = 0;
+    while (std::getline(file, line)) {
+        ++lineNumber;
+        if (std::regex_match(line, match, includePattern)) {
+            if (!appendShaderSource(source.parent_path() / match[1].str(), stack, sources, output)) {
+                std::cerr << "Included from " << source << ':' << lineNumber << '\n';
+                return false;
+            }
+            output << "#line " << lineNumber + 1 << ' ' << id << '\n';
+        }
+        else {
+            output << line << '\n';
+        }
+    }
+    stack.pop_back();
+    return !file.bad();
+}
 
-	//成功時
-	return buffer.str();
+std::string readShaderSource(const std::string& name, std::string& diagnostic) {
+    ShaderPaths stack, sources;
+    std::ostringstream output;
+    if (!appendShaderSource(name, stack, sources, output)) return {};
+    diagnostic = name;
+    for (size_t i = 1; i < sources.size(); ++i) {
+        diagnostic += "\n  source " + std::to_string(i) + ": " + sources[i].generic_string();
+    }
+    return output.str();
+}
 }
 
 /// シェーダーのソースファイルを読んでプログラムオブジェクトを作成する
@@ -190,7 +223,8 @@ auto loadProgram(const std::string& vert, const std::string& frag) -> GLuint {
 	}
 
 	// バーテックスシェーダーのソースファイルを読む
-	const std::string vsrc{ readShaderSource(vert) };
+	std::string vertexDiagnostic, fragmentDiagnostic;
+	const std::string vsrc{ readShaderSource(vert, vertexDiagnostic) };
 
 	// バーテックスシェーダーのソースファイルが読み込めなければ
 	if (vsrc.empty())return 0;
@@ -201,14 +235,14 @@ auto loadProgram(const std::string& vert, const std::string& frag) -> GLuint {
 	// フラグメントシェーダーのソースファイル名が指定されていたら
 	if (!frag.empty()) {
 		// フラグメントシェーダーのソースファイル名が指定されていたら
-		fsrc = readShaderSource(frag);
+		fsrc = readShaderSource(frag, fragmentDiagnostic);
 
 		// 読み込み失敗
 		if (fsrc.empty()) return 0;
 	}
 
 	// 両方のソースファイルを読み込めたらプログラムオブジェクトを作成する
-	return createProgram(vsrc, fsrc, vert, frag);
+	return createProgram(vsrc, fsrc, vertexDiagnostic, fragmentDiagnostic);
 }
 
 /// コンピュートシェーダーのソースプログラムの文字列を読み込んでプログラムオブジェクトを作成
@@ -238,10 +272,11 @@ auto createCompute(const std::string& csrc, const std::string& cmsg) -> GLuint {
 /// @retunr プログラムオブジェクトのプログラム名、作成できなければ 0
 extern auto loadCompute(const std::string& comp) -> GLuint {
 	// コンピュートシェーダーのソースファイルを読み込んで
-	std::string csrc{ readShaderSource(comp) };
+	std::string diagnostic;
+	std::string csrc{ readShaderSource(comp, diagnostic) };
 
 	// ソースファイルが読めたらプログラムオブジェクトを作成
-	if (!csrc.empty()) return createCompute(csrc, comp);
+	if (!csrc.empty()) return createCompute(csrc, diagnostic);
 
 	// ソースファイルを読み込み失敗なので 0 を返す
 	return 0;

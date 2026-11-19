@@ -20,18 +20,7 @@ uniform int is_floor; // 地面描画の際には true
 uniform mat4 mc;
 
 // MPMの粒子群のデータ構造（コンピュートシェーダーと同じもの）
-struct mpmParticle {
-	vec4 position;
-	vec4 velocity;
-	mat4 affineC;
-	mat4 deformation;
-	float alpha;
-	float q;
-	float vc;
-	int state;
-	int scale;
-	int padding[3];
-};
+#include "../mpm/shaders/common/particle.glsl"
 
 // SSBOバインド (メインループでバインド済みのVBO兼SSBOを直接読み込む)
 layout(std430, binding = 0) buffer mpmBuffer {

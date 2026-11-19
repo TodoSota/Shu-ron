@@ -72,6 +72,7 @@
   <PropertyGroup Label="UserMacros" />
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
+      <LanguageStandard>stdcpp17</LanguageStandard>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_USE_MATH_DEFINES;GLM_FORCE_RADIANS;GLM_ENABLE_EXPERIMENTAL</PreprocessorDefinitions>
@@ -85,6 +86,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
+      <LanguageStandard>stdcpp17</LanguageStandard>
       <WarningLevel>Level3</WarningLevel>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
@@ -99,6 +101,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
+      <LanguageStandard>stdcpp17</LanguageStandard>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_USE_MATH_DEFINES;GLM_FORCE_RADIANS;GLM_ENABLE_EXPERIMENTAL</PreprocessorDefinitions>
@@ -112,6 +115,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
+      <LanguageStandard>stdcpp17</LanguageStandard>
       <WarningLevel>Level3</WarningLevel>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
@@ -165,7 +169,6 @@
     <None Include="src\mpm\shaders\3dtexture\mpm_g2p_3dtex.comp" />
     <None Include="src\mpm\shaders\3dtexture\mpm_g2p_Linear_3dtex.comp" />
     <None Include="src\mpm\shaders\3dtexture\mpm_grid_3dtex.comp" />
-    <None Include="src\mpm\shaders\3dtexture\mpm_move_3dtex.comp" />
     <None Include="src\mpm\shaders\3dtexture\mpm_p2g_3dtex.comp" />
     <None Include="src\mpm\shaders\3dtexture\mpm_p2g_Linear_3dtex.comp" />
     <None Include="src\mpm\shaders\3dtexture\mpm_setup_3dtex.comp" />
@@ -174,11 +177,13 @@
     <None Include="src\mpm\shaders\ssbo\mpm_g2p_Linear_ssbo.comp" />
     <None Include="src\mpm\shaders\ssbo\mpm_g2p_ssbo.comp" />
     <None Include="src\mpm\shaders\ssbo\mpm_grid_ssbo.comp" />
-    <None Include="src\mpm\shaders\ssbo\mpm_move_ssbo.comp" />
     <None Include="src\mpm\shaders\ssbo\mpm_p2g_Linear_ssbo.comp" />
     <None Include="src\mpm\shaders\ssbo\mpm_p2g_ssbo.comp" />
     <None Include="src\mpm\shaders\ssbo\mpm_setup_ssbo.comp" />
     <None Include="src\mpm\shaders\timeline_record.comp" />
+    <None Include="src\mpm\shaders\common\particle.glsl" />
+    <None Include="src\mpm\shaders\common\physics.glsl" />
+    <None Include="src\mpm\shaders\common\deformation.glsl" />
     <None Include="src\render\mesh.frag" />
     <None Include="src\render\mesh.vert" />
     <None Include="src\render\point.frag" />

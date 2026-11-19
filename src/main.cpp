@@ -1,11 +1,7 @@
 //==============================================================================
-// main.cpp : アプリケーションの司令塔 (MVC の結合部)
-// 目的: ウィンドウ・OpenGL・ImGui を初期化し、
-//         Model      : MpmSimulator (MPM の計算), TimelineManager (巻き戻し)
-//         View       : Renderer (描画)
-//         Controller : InteractionController (Shoot / Swing 操作)
-//       を生成して、メインループで「入力 → 物理 (サブステップ) → 記録 → 描画 → UI」を繰り返す。
-//       物理パラメータ (MpmPhysics) はここで決めて毎ステップ UBO へ送る。
+// main.cpp : 初期化、方式選択とメインループ
+// 入力を受け、物理サブステップ、履歴記録、描画とUIを進める。
+// 物理パラメータを設定し、シミュレーター経由で物理UBOを更新する。
 //==============================================================================
 // Windowsの OpenGL ライブラリをリンクする
 #pragma comment(lib, "opengl32.lib")
@@ -49,26 +45,29 @@ const int baseParticleCount = 10000;
 //   シミュレーション領域は [0, kWorldScale]³ (m)。格子間隔 dx = kWorldScale / currentGrid
 const float kWorldScale = 1.5f;
 // 巻き戻し可能フレーム数
-//   ※ 履歴は GPU 上に 粒子数 × 192 バイト × maxFrames だけ確保される
-//     (10,000 粒子で約 1.15 GB、100,000 粒子では約 11.5 GB になり確保できない可能性が高い)
+//   履歴フレーム数の上限。実際の容量はTimelineManagerが予算とGPU上限から決める。
 const int maxFrames = 600;
 
+// シミュレーション範囲から逆算した適切な粒子体積
+// 初期立方体(一辺0.3m)を基準粒子数で割った1粒子あたりの絶対体積
+const float kBaseParticleVolume = pow(kWorldScale * 0.2f, 3.0f) / static_cast<float>(baseParticleCount);
+
 // 粒子 1 個が占める立方体の一辺 (V_init / N)^(1/3) [m] (描画半径の基準)
-//   MpmSimulator::resetParticles は、一辺 0.2 × kWorldScale × particleScale の立方体に粒子を置く
+//   IMpmSimulator::resetParticles は、一辺 0.2 × kWorldScale × particleScale の立方体に粒子を置く
 float particleSpacing(float particleScale, int particleCount) {
 	return kWorldScale * 0.2f * particleScale / std::cbrt(static_cast<float>(particleCount));
 }
 
 // mpmSimParam の再設定
-//   目的: 格子解像度を変えて再起動するときに、dx に依存するパラメータ (dx, 1/dx, 粒子体積・質量・半径) を計算し直す。
-//   粒子は「1 辺 dx/2 の立方体」(1 セルに 8 個入る大きさ) とみなし、密度 400 kg/m³ で質量を決めている。
-//   ※ 起動時の初期値 (下の mpmSimParam) では p_radius = 0.01 で、ここでの dx/2 と一致しない
+//   目的: 再起動時にdx、1/dx、接触半径を再計算し、基準体積・質量を再設定する。
+//   立方体配置の粒子体積は基準立方体の体積を基準粒子数で割った値。質量は体積×400 kg/m³。
+//   接触半径は起動・再設定ともdx/2。描画半径はparticleSpacing等から別に設定する。
 MpmPhysics resetMpmSimParam(MpmPhysics mpmSimParam, int currentGrid) {
 	const float currentGridSpacing = kWorldScale / static_cast<float>(currentGrid);	// グリッドの間隔
 	const float invGridSpacing = 1.0f / currentGridSpacing;
 
 	const float particleRadius = currentGridSpacing * 0.5f;
-	const float particleVolume = particleRadius * particleRadius * particleRadius;
+	const float particleVolume = kBaseParticleVolume;
 	const float particleMass = particleVolume * 400.0f; // 密度 400.0f
 
 	mpmSimParam.dx = currentGridSpacing;
@@ -178,15 +177,22 @@ auto main() -> int {
 	//--------------------------------------------------------------------------
 	// 2. 障害物 (SDF) の準備
 	//   メッシュを読み込み、ローカル空間で 64³ の SDF を一度だけ CPU で計算する (起動時に時間がかかる)。
-	//   最初は領域の外 (kWorldScale + 1) に置いておき、Shoot / Swing 操作で領域内へ動かす。
+	//   初期位置・拡大率は下のSdfInstance設定で指定し、Shoot / Swing操作で更新する。
 	//--------------------------------------------------------------------------
 	// シミュレーション空間内に存在するオブジェクトリソースのロード
-	auto sdfResource = std::make_shared<MeshResource>("src/assets/object.obj");
-	sdfResource->generateSDF(64);// 64^3の解像度でSDFを生成
+	std::shared_ptr<MeshResource> sdfResource;
+	try {
+		sdfResource = std::make_shared<MeshResource>("src/assets/object.obj");
+		sdfResource->generateSDF(64);
+	}
+	catch (const std::exception& error) {
+		std::cerr << "SDF generation rejected the mesh: " << error.what() << std::endl;
+		return EXIT_FAILURE;
+	}
 
 	// インスタンスを作成
 	SdfInstance obstacle(sdfResource);
-	obstacle.position = glm::vec3(kWorldScale + 1, 0.3f, kWorldScale + 1);
+	obstacle.position = glm::vec3(kWorldScale * 0.5f, 0.3f, kWorldScale * 0.5f);
 	obstacle.scale = glm::vec3(0.2f);
 	obstacle.updateMatrices();
 
@@ -195,11 +201,11 @@ auto main() -> int {
 	//   E, ν からラメ定数 μ = E / 2(1+ν), λ = Eν / (1+ν)(1-2ν) を求める。
 	//   コメントアウトされている E = 3.537e5 は Klár et al. 2016 の砂の値
 	//   (同論文の密度は 2200 kg/m³)。
-	//   [点検] 時間刻み Δt = 1e-3 s は、弾性波の CFL 条件
+	//   時間刻みは工程2の基準条件でΔt=2.5e-4 sを採用。弾性波のCFL条件
 	//     Δt ≲ C·dx / sqrt((λ + 2μ)/ρ)   (C ≈ 0.3〜0.5)
 	//   を E = 5e4, ν = 0.3, ρ = 400, dx = 1.5/128 で見積もると約 2.7e-4 s になり、
-	//   これより大きい。現状で発散していないのは、G2P の C が dx 倍に小さく
-	//   (mpm_g2p.comp の [点検] を参照)、実質の剛性が非常に低くなっているためと考えられる。
+	//   旧dt=1e-3 sは刻み比較のAABB基準を超えた。材料・速度・格子変更時の自動dt調整はない。
+	//   [点検 B-1] 基準条件以外の安定性は未保証。docs/maintenance/stage2-validation.mdを参照。
 	//--------------------------------------------------------------------------
 	// 各種材料の特性値とシミュレーションの設定
 	//const float E = 3.537e5f;	// ヤング率
@@ -210,7 +216,7 @@ auto main() -> int {
 	// 空間における設定
 	MpmPhysics mpmSimParam{
 		{0.0f, -9.8f, 0.0f},// 重力
-		1.0f / 1000.0f,		// 時間間隔
+		1.0f / 4000.0f,		// 時間間隔（工程2の基準dt=0.00025秒）
 		{0.0f, 1.0f, 0.0f},	// 地面の法線
 		0.1f,				// 地面の高さ
 		0.5f,				// 地面の反発係数
@@ -220,12 +226,12 @@ auto main() -> int {
 
 		// 粒子
 		0.2f,											// 粒子の反発係数
-		pow(currentGridSpacing * 0.5f, 3.0f),					// 粒子の体積
+		kBaseParticleVolume,					// 粒子の体積
 		E / (2.0f * (1.0f + Nu)),						// 粒子のラメ係数
 		E * Nu / ((1.0f + Nu) * (1.0f - 2.0f * Nu)),	// 粒子のラメ係数
-		(currentGridSpacing * 0.5f) * (currentGridSpacing * 0.5f) * (currentGridSpacing * 0.5f) * 400.0f,// 粒子の質量
-		0.01f,											// 粒子の半径
-		0.0001f,										// 粒子の重なり
+		kBaseParticleVolume * 400.0f,// 粒子の質量
+		currentGridSpacing * 0.5f,											// 粒子の半径
+		currentGridSpacing * 0.005f,										// 予約スロット（旧p_overlap）
 		0,												// 調整
 
 		// 障害物
@@ -287,7 +293,7 @@ auto main() -> int {
 	bool stepFrame{ false };
 
 	// サブステップ
-	//   1 描画フレームあたりの物理ステップ数。Δt = 1 ms なので、60 fps で 16 ステップなら実時間とほぼ同じ速さになる
+	//   同じdtで行う1描画フレームあたりの物理ステップ数。既定dt=.25ms。増やしても1ステップのdtは小さくならない。
 	int subSteps = 1;
 
 	// 描画用フレームカウンター
@@ -321,9 +327,13 @@ auto main() -> int {
 		// ポーズかコマ送りの場合タイムステップを停止
 		float currentDt = (isPaused && !stepFrame) ? 0.0f : mpmSimParam.timestep;
 
+		if (!mpmSimulator->getSimulationError().empty()) { isPaused = true; stepFrame = false; }
 		if (!isPaused || stepFrame) {
+			int completedSubSteps = 0;
 			// サブステップ
 			for (int i = 0; i < subSteps; i++) {
+				const auto previousObstacle = obstacle.captureSnapshot();
+				const auto previousController = controller;
 				// 入力とカメラ更新
 				controller.update(window, camera, obstacle, currentDt);
 
@@ -333,11 +343,19 @@ auto main() -> int {
 				// 値の共有と物理計算の進行
 				mpmSimulator->setPhysics(mpmSimParam);
 				mpmSimulator->step(obstacle);		// *** 計算の主体 ***
+				if (!mpmSimulator->getSimulationError().empty()) {
+					obstacle.restoreSnapshot(previousObstacle);
+					controller = previousController;
+					isPaused = true;
+					break;
+				}
+				++completedSubSteps;
 			}
 			// 粉塵を、このフレームで進めたシミュレーション時間だけ進める
-			renderer.updateDust(mpmSimulator->getMpmObject(), mpmSimParam, mpmSimParam.timestep * subSteps);
+			renderer.updateDust(mpmSimulator->getMpmObject(), mpmSimParam, mpmSimParam.timestep * completedSubSteps);
 			// コマ送り要求完了のためリセット
 			stepFrame = false;
+			if (completedSubSteps > 0) {
 			// シミュレーション状況をタイムラインへ記録 (サブステップごとではなく、描画 1 フレームに 1 回)
 			timeline->recordFrame(mpmSimulator->getMpmObject().getReadVbo(), &obstacle);
 			// シミュレーションの FPS 状況を評価クラスへ送信
@@ -345,10 +363,11 @@ auto main() -> int {
 			mpmSimulator->getEvaluator().recordAppFps(renderFrame, currentFramerate, 1000.0f / currentFramerate);
 			renderFrame++;
 			if (currentFramerate < 1) isPaused = true;
+			}
 		}
 		else {
 			// 一時停止中もプレビューなどは更新する
-			controller.update(window, camera, obstacle, currentDt);
+			if (mpmSimulator->getSimulationError().empty()) controller.update(window, camera, obstacle, currentDt);
 		}
 
 		// --- 描画 ---
@@ -379,6 +398,10 @@ auto main() -> int {
 		// --- UI (ImGui): 評価・ログ、パラメータ、カメラ、タイムライン、再起動の設定 ---
 #if defined(IMGUI_VERSION)
 		ImGui::Begin("Simulation Control");
+		if (!mpmSimulator->getSimulationError().empty()) {
+			ImGui::TextUnformatted("Simulation stopped. Restart to clear the deformation fault.");
+			ImGui::TextWrapped("%s", mpmSimulator->getSimulationError().c_str());
+		}
 
 		// 描画の設定 (描画モード・光源・影・AO)
 		renderer.drawSettingsUi();
@@ -557,7 +580,10 @@ auto main() -> int {
 		int currentPlaybackFrame = timeline->getPlaybackFrame();
 
 		// スライダーを操作したとき
-		if (ImGui::SliderInt("Timeline (Frames)", &currentPlaybackFrame, 0, maxFrameIndex)) {
+		if (timeline->getCapacity() == 0) ImGui::TextUnformatted("Timeline unavailable");
+		else ImGui::Text("Timeline capacity: %d frames", timeline->getCapacity());
+		if (timeline->getCurrentFrameCount() > 0 &&
+			ImGui::SliderInt("Timeline (Frames)", &currentPlaybackFrame, 0, maxFrameIndex)) {
 			// 強制的にPauseにする
 			isPaused = true;
 			timeline->setPlaybackFrame(currentPlaybackFrame);

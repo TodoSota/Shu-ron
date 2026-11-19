@@ -22,7 +22,6 @@ private:
     int particleCount;  // シミュレーション内で扱う粒子数
     int sdfCount;       // シミュレーション内で存在するオブジェクト
 
-    size_t particleBytes;   // 粒子1個のバイト数(GPUアクセス上)
     size_t frameStride;     // 1フレームでのデータサイズ(= particleBytes * particleCount)
 
     int currentFrameCount; // 現在記録されている有効フレーム数
@@ -31,7 +30,7 @@ private:
 
     GLuint recordProgram{ 0 };
     GLint writeOffsetLoc{ -1 };
-    GLuint historyVbo;                      // GPU 上での記録媒体
+    GLuint historyVbo{ 0 };                      // GPU 上での記録媒体
     std::vector<SdfSnapshot> sdfHistory;    // CPU 上での記録媒体
 
     /// 論理フレーム番号を物理インデックスに変換
@@ -44,10 +43,10 @@ private:
 
 public:
     // コンストラクタ / デストラクタ
-    /// @param [in] maxFrames リングバッファの容量
+    /// @param [in] requestedFrames リングバッファに要求する最大フレーム数
     /// @param [in] particleCount 粒子数
     /// @param [in] sdfCount 存在するオブジェクト
-    TimelineManager(int maxFrames, int particleCount, int sdfCount = 1);
+    TimelineManager(int requestedFrames, int particleCount, int sdfCount = 1);
     ~TimelineManager();
 
 
@@ -55,6 +54,7 @@ public:
     void restoreToFrame(int logicalFrame, GLuint targetVbo, SdfInstance* sdfs);
 
     // ゲッター / セッター
+    int getCapacity() const { return maxFrames; }
     int getCurrentFrameCount() const { return currentFrameCount; }
     int getPlaybackFrame() const { return playbackFrame; }
     GLuint getHistoryVbo() const { return historyVbo; }

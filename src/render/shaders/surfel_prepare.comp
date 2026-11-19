@@ -16,18 +16,7 @@
 
 layout(local_size_x = 256) in;
 
-struct mpmParticle {
-	vec4 position;
-	vec4 velocity;
-	mat4 affineC;
-	mat4 deformation;
-	float alpha;
-	float q;
-	float vc;
-	int state;
-	int scale;
-	int padding[3];
-};
+#include "../../mpm/shaders/common/particle.glsl"
 layout(std430, binding = 0) readonly buffer mpmBuffer { mpmParticle p[]; };
 
 struct Surfel {

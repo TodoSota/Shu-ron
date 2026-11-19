@@ -6,11 +6,9 @@
 //         ・描画用の VAO / VBO
 //         ・衝突判定用の符号付き距離場 (SDF) を 3D テクスチャ (R32F) として
 //       を用意する。同じ形状の障害物を複数置く場合は、このリソースを SdfInstance から共有する。
-// SDF の生成方法: 各ボクセル中心から全三角形への最近接点を総当たりで求め (O(R³ × 三角形数))、
-//       最も近い三角形の面法線と最近接点へのベクトルの内積で内外 (符号) を決める。
-//       [点検] 最近接点が三角形の辺や頂点のときは、面法線による符号判定が誤ることがある
-//       (凹形状や鋭いエッジで内外が反転する)。角度重み付き擬似法線 (Bærentzen & Aanæs 2005) や
-//       一般化 winding number を使うと頑健になる。
+// SDF生成格子点から全三角形への最短距離と立体角総和による巻き数を求める。
+// B-6d: 閉曲面・面方向整合・非退化・多様体を検査し、非対応入力は拒否する。
+// 全体の面方向反転は許容。自己交差は検査しておらず、対応範囲外（対応台帳参照）。
 //==============================================================================
 #include <GL/glew.h>
 #include <GLM/glm.hpp>
@@ -18,6 +16,11 @@
 #include <string>
 #include <iostream>
 #include <cmath>
+#include <array>
+#include <algorithm>
+#include <map>
+#include <set>
+#include <stdexcept>
 
 #include "../tiny_obj_loader/tiny_obj_loader.h"
 
@@ -61,6 +64,9 @@ public:
     /// SDF の生成 + 各ボクセルからメッシュへの最短距離の計算 | ※呼び出しは一回だけ！
     /// @param[in] resolution 作成する3D(SDF)テクスチャの解像度 | 現在は固定値で
     void generateSDF(int resolution = 64) {
+        if (resolution < 2 || resolution > 512) throw std::invalid_argument("SDF resolution must be in [2,512]");
+        if (sdfTexture3D) throw std::runtime_error("SDF has already been generated");
+        validateClosedMesh();
         std::cout << "SDF Generation Started... (Resolution: " << resolution << ")" << std::endl;
 
         // 1. 境界誤差防止のためSDFの計算範囲を AABB より少し広めに
@@ -80,11 +86,11 @@ public:
         for (int z = 0; z < resolution; ++z) {
             for (int y = 0; y < resolution; ++y) {
                 for (int x = 0; x < resolution; ++x) {
-                    // 現在のボクセルのワールド座標
+                    // 現在のSDF格子点のローカル座標
                     glm::vec3 p = sdfMin + glm::vec3(x, y, z) * cellSize;
 
                     float minDist = 1e10f;
-                    float sign = 1.0f; // 1.0 = 外側, -1.0 = 内側
+                    double solidAngle = 0.0;
 
                     // 全ての三角形に対して最短距離を計算
                     for (size_t i = 0; i < indices.size(); i += 3) {
@@ -98,16 +104,22 @@ public:
 
                         if (dist < minDist) {
                             minDist = dist;
-                            // 三角形の法線を使って内側か外側かを判定
-                            glm::vec3 normal = glm::normalize(glm::cross(v1 - v0, v2 - v0));
-                            // 最も近い点からボクセルへのベクトルと法線の内積で判定
-                            sign = glm::dot(p - closestPt, normal) >= 0.0f ? 1.0f : -1.0f;
                         }
+                        // B-6d: generalized winding via signed triangle solid angles.
+                        // Absolute total permits a globally reversed closed surface.
+                        const glm::dvec3 a = glm::dvec3(v0) - glm::dvec3(p);
+                        const glm::dvec3 b = glm::dvec3(v1) - glm::dvec3(p);
+                        const glm::dvec3 c = glm::dvec3(v2) - glm::dvec3(p);
+                        const double la = glm::length(a), lb = glm::length(b), lc = glm::length(c);
+                        const double numerator = glm::dot(a, glm::cross(b, c));
+                        const double denominator = la*lb*lc + glm::dot(a,b)*lc + glm::dot(b,c)*la + glm::dot(c,a)*lb;
+                        solidAngle += 2.0 * std::atan2(numerator, denominator);
                     }
 
                     // インデックスの計算 (Z * res*res + Y * res + X)
                 //   glTexImage3D は x が最も速く変わる順に並んだデータを受け取るので、この並びに合わせる
                     int index = z * resolution * resolution + y * resolution + x;
+                    const float sign = std::abs(solidAngle) > 6.283185307179586 ? -1.0f : 1.0f;
                     sdfData[index] = minDist * sign;
                 }
             }
@@ -148,6 +160,59 @@ public:
     }
 
 private:
+    // Support closed, consistently oriented, nondegenerate two-manifold triangle
+    // meshes. Self intersections are outside the supported input contract.
+    // Quantization welds OBJ-expanded vertices and the built-in sphere seam.
+    void validateClosedMesh() const {
+        if (indices.empty() || indices.size()%3) throw std::runtime_error("SDF requires triangles");
+        const glm::vec3 extent = aabbMax-aabbMin;
+        const double size = glm::max(glm::max(extent.x,extent.y),extent.z);
+        if (!(size > 0.0) || !std::isfinite(size)) throw std::runtime_error("Invalid SDF mesh bounds");
+        const double weld = size*1e-6;
+        std::map<std::array<long long,3>, size_t> vertexIds;
+        std::map<std::pair<size_t,size_t>, std::pair<int,int>> edges;
+        std::map<size_t, std::map<size_t,std::set<size_t>>> links;
+        for (size_t i=0; i<indices.size(); i+=3) {
+            size_t ids[3]; glm::dvec3 p[3];
+            for (int j=0; j<3; ++j) {
+                if (indices[i+j]>=vertices.size()) throw std::runtime_error("Invalid SDF vertex index");
+                p[j] = glm::dvec3(vertices[indices[i+j]].position);
+                std::array<long long,3> key{};
+                for (int axis=0; axis<3; ++axis) {
+                    if (!std::isfinite(p[j][axis]) || std::abs(p[j][axis]/weld)>9e18)
+                        throw std::runtime_error("Nonfinite or excessive SDF coordinate");
+                    key[axis] = std::llround(p[j][axis]/weld);
+                }
+                auto found=vertexIds.find(key);
+                if (found==vertexIds.end()) found=vertexIds.emplace(key,vertexIds.size()).first;
+                ids[j]=found->second;
+            }
+            if (ids[0]==ids[1] || ids[1]==ids[2] || ids[2]==ids[0]
+                || glm::length(glm::cross(p[1]-p[0],p[2]-p[0])) <= size*size*1e-12)
+                throw std::runtime_error("SDF rejects degenerate triangles");
+            for (int j=0; j<3; ++j) {
+                const size_t a=ids[j], b=ids[(j+1)%3], cc=ids[(j+2)%3];
+                auto& edge=edges[std::minmax(a,b)];
+                ++edge.first; edge.second += a<b ? 1 : -1;
+                links[a][b].insert(cc); links[a][cc].insert(b);
+            }
+        }
+        for (const auto& entry:edges) if (entry.second.first!=2 || entry.second.second!=0)
+            throw std::runtime_error("SDF requires closed, consistently oriented manifold edges");
+        for (const auto& entry:links) {
+            const auto& link=entry.second;
+            std::set<size_t> visited; std::vector<size_t> stack{link.begin()->first};
+            while (!stack.empty()) {
+                const auto id=stack.back(); stack.pop_back();
+                if (!visited.insert(id).second) continue;
+                const auto& neighbors=link.at(id);
+                if (neighbors.size()!=2) throw std::runtime_error("Nonmanifold SDF vertex");
+                stack.insert(stack.end(),neighbors.begin(),neighbors.end());
+            }
+            if (visited.size()!=link.size()) throw std::runtime_error("Disconnected SDF vertex fan");
+        }
+    }
+
     /// OBJ ファイル読み込み
     /// @param[in] filepath ファイルパス
     bool loadOBJ(const std::string& filepath) {
@@ -166,6 +231,8 @@ private:
         for (const auto& shape : shapes) {
             for (const auto& index : shape.mesh.indices) {
                 SDFVertex vertex{};
+                if (index.vertex_index < 0 || static_cast<size_t>(index.vertex_index)*3+2 >= attrib.vertices.size())
+                    throw std::runtime_error("Invalid OBJ vertex index");
 
                 // 位置
                 vertex.position = {
@@ -176,6 +243,8 @@ private:
 
                 // 法線
                 if (index.normal_index >= 0) {
+                    if (static_cast<size_t>(index.normal_index)*3+2 >= attrib.normals.size())
+                        throw std::runtime_error("Invalid OBJ normal index");
                     vertex.normal = {
                         attrib.normals[3 * index.normal_index + 0],
                         attrib.normals[3 * index.normal_index + 1],

@@ -38,20 +38,7 @@ layout(r32ui, binding = 3) uniform uimage3D gridIMA;
 // 粒子のデータ構造 (C++ 側 MpmParticle と std430 でバイト単位まで一致させる。192 バイト)
 // vec3 / mat3 は std430 でも 16 バイト境界に揃えられて C++ 側とずれやすいため、
 // vec4 / mat4 で確保して内部では xyz / 左上 3×3 だけを使う
-struct mpmParticle {
-	vec4 position;		// 位置
-	vec4 velocity;		// 速度 + padding
-	mat4 affineC;		//アフィン速度行列 (mat3 分のみ値あり)
-	mat4 deformation;	// 変形勾配 (mat3 分のみ値あり)
-
-	// 砂の塑性変形パラメーター
-	 float alpha;		//降伏面の大きさ
-	 float q;			//硬化状態
-	 float vc;			//変化の際の体積変化
-	 int state;			//状態(変化)
-	 int scale;			//スケール
-	 int padding[3];		//調整
-};
+#include "../common/particle.glsl"
 
 // 入力粒子 (ダブルバッファの読み出し側)。P2G では粒子を書き換えないので readonly
 layout(std430, binding = 0) readonly buffer mpmBuffer {
@@ -59,33 +46,7 @@ layout(std430, binding = 0) readonly buffer mpmBuffer {
 };
 
 // MPMの粒子群の物理パラメータ (C++ 側 MpmPhysics と std140 で一致させる UBO)
-layout(std140, binding = 1) uniform MPMPhysics {
-	// シミュレーション空間
-	vec3 gravity;		// 重力
-	float timestep;		// 時間間隔
-	vec3 f_normal;		// 地面の法線
-	float f_height;		// 地面の高さ
-
-	float f_restitution;// 地面の反発係数
-	float f_friction;	// 地面の摩擦係数
-	float dx;			// グリッドの間隔
-	float inv_dx;		// 間隔の逆数
-
-	// 粒子
-	float p_restitution;// 粒子の反発係数
-	float p_vol;		// 粒子の体積
-	float p_mu;			// 粒子のラメ係数
-	float p_lambda;		// 粒子のラメ係数
-
-	float p_mass;		// 粒子の質量
-	float p_radius;		// 粒子の半径
-	float p_overlap;	// 粒子の重なり
-	float p_padding;	// 調整
-
-	// 障害物
-	vec4 obstacle_sphere; // 静的物体の仮設
-	vec4 obstacle_velocity; // 静的物体の速度
-};
+#include "../common/physics.glsl"
 
 //------------------------------------------------------------------------------
 // float の atomic 加算 (CAS ループ)
@@ -141,81 +102,15 @@ void atomicAddFloatA(ivec3 coords, float val) {
 //         回転の積 V が固有ベクトル行列になる。
 //   注意: GLSL の行列は列優先 (M[列][行]) である。
 //
-//   [点検] 回転角の符号が逆になっている。
+//   Jの成分配置に合わせ、回転角の分子を-2a_pqとする。
 //     J[p][q] = s (= 行 q・列 p の成分) という置き方では、新しい非対角成分は
 //       (c² - s²)·a_pq + c·s·(a_qq - a_pp)
 //     となり、これを 0 にする角度は tan 2φ = -2a_pq / (a_qq - a_pp) である。
-//     しかし下のコードは atan(2a_pq, a_qq - a_pp) で、符号が逆になっている。
-//     NumPy で再現した検証では、F = I + 0.1·N(0,1) のとき、3 反復後の
-//     非対角成分の相対残差は中央値で約 17% 残り、反復を増やしても減らない
-//     (符号を反転すると 0.2% 程度まで収束する)。
-//     修正するには、phi = 0.5 * atan(-2.0 * apq, aqq - app) とするか、
-//     J[p][q] と J[q][p] の s の符号を入れ替える。mpm_g2p*.comp も同じ。
+//     工程1の限定入力では再構成・直交性・対角化を実GPUで確認済み。
+//     退化・反転の制約C-9はdocs/maintenance/maintenance-plan.mdを参照。
 //------------------------------------------------------------------------------
 // 固有値分解
-void jacobiEigen(inout mat3 S, out mat3 V) {
-    V = mat3(1.0);
-
-	// 実用上は 3-5 回で十分 (3 を 5 に変えても可)
-    for (int iter = 0; iter < 3; ++iter) {
-        for (int p = 0; p < 2; ++p)
-        for (int q = p + 1; q < 3; ++q) {
-
-            float app = S[p][p];
-            float aqq = S[q][q];
-            float apq = S[p][q];
-
-            // すでにほぼ対角なら回転不要
-            if (abs(apq) < 1e-6) continue;
-
-            // (p,q) 平面の回転角
-            float phi = 0.5 * atan(2.0 * apq, aqq - app);
-            float c = cos(phi);
-            float s = sin(phi);
-
-            // 回転行列 J を作り、S ← JᵀSJ、V ← VJ と累積する
-            mat3 J = mat3(1.0);
-            J[p][p] =  c; J[p][q] = s;
-            J[q][p] = -s; J[q][q] = c;
-
-            S = transpose(J) * S * J;
-            V = V * J;
-        }
-    }
-}
-
-//------------------------------------------------------------------------------
-// 3×3 行列の特異値分解 F = U Σ Vᵀ
-//   目的: 変形勾配 F を「回転 U・主ストレッチ Σ・回転 V」に分け、
-//         主ひずみ空間 (対角成分だけ) で構成則を評価できるようにする。
-//   方法: FᵀF = V Σ² Vᵀ を Jacobi 法で求め、Σ = sqrt(固有値)、U = F V Σ⁻¹ とする。
-//   注意: ・Σ は sqrt(max(λ, 1e-4)) により 0.01 以上に下限が設けられている
-//           (極端な圧縮で Σ⁻¹ が発散するのを防ぐためのクランプであり、
-//            「微小値を足す」処理ではない)。
-//         ・det F < 0 (要素の反転) のときに U が反射を含むことへの対処はない。
-//         ・特異値の大小の並べ替えは行わない (等方な構成則なので順序は不要)。
-//------------------------------------------------------------------------------
-// 特異値分解
-void svd(mat3 F, out mat3 U, out mat3 Sigma, out mat3 V) {
-    mat3 S = transpose(F) * F;
-
-    jacobiEigen(S, V);
-
-    Sigma = mat3(0.0);
-	// ゼロ除算の恐れがあるので、微小な値を足す(エプシロン)
-    Sigma[0][0] = sqrt(max(S[0][0], 1e-4));
-    Sigma[1][1] = sqrt(max(S[1][1], 1e-4));
-    Sigma[2][2] = sqrt(max(S[2][2], 1e-4));
-
-    mat3 invSigma = mat3(0.0);
-
-	invSigma[0][0] = 1.0 / Sigma[0][0];
-	invSigma[1][1] = 1.0 / Sigma[1][1];
-	invSigma[2][2] = 1.0 / Sigma[2][2];
-
-    U = F * V * invSigma;
-}
-
+#include "../common/deformation.glsl"
 
 void main() {
 	// 担当する粒子番号。グループ数を切り上げで起動しているため、範囲外のスレッドは何もしない
@@ -262,6 +157,7 @@ void main() {
 	// 応力の計算 SVD(特異値分解)
 	mat3 U, sig, V;
 	svd(F, U, sig, V);
+	if (invalidDeformation(F, U, sig, V, idx, 1u)) return;
 
 	mat3 e = mat3(0.0);
 	e[0][0] = log( max(sig[0][0], 1e-6) );
@@ -269,20 +165,15 @@ void main() {
 	e[2][2] = log( max(sig[2][2], 1e-6) );
 	float trace_e = e[0][0] + e[1][1] + e[2][2];
 
-	// [点検] 次の 2 行と、その次の transpose(F) の乗算を合わせると、
-	//   U τ̂ Vᵀ Fᵀ = U τ̂ Σ Uᵀ となり、正しい Kirchhoff 応力 τ = U τ̂ Uᵀ に
-	//   余分な Σ が掛かる。厳密にするには stress = U * stress_diag * transpose(U) とし、
-	//   transpose(F) を掛けない (または P = U τ̂ Σ⁻¹ Vᵀ として P Fᵀ を使う)。
-	//   変形が小さい (Σ ≈ I) ときの差は小さいが、大変形では応答が変わる。
+	// Kirchhoff応力 τ=U τ̂ Uᵀ。下のMLS力項へ直接渡すためFᵀは追加しない。
 	mat3 stress_diag = 2.0 * p_mu * e + p_lambda * trace_e * mat3(1.0);
-	mat3 stress = U * stress_diag * transpose(V);	// Piola-Kirchoff応力の近似を扱う形式を利用(厳密にするなら strees_diag に inverse(sig) したものを掛けなければならない)
-	// <追記> 厳密さを(人間の目にはわからない程度には)二の次にしているのでヤング率などで調整する方向性にする
+	mat3 stress = U * stress_diag * transpose(U);
 
 	// MLS-MPM の力の項: f_i = -V_p · M_p⁻¹ · τ · (x_i - x_p) · w_ip
 	//   2次 B スプラインでは M_p⁻¹ = 4 / dx² (APIC の慣性テンソルの逆数) 。
 	//   ここでは -V_p · 4/dx² · τ を先にまとめて計算しておき、下のループで
 	//   (x_i - x_p) と重みを掛ける
-	stress = (-p_vol * 4.0 * inv_dx * inv_dx) * stress * transpose(F);
+	stress = (-p_vol * 4.0 * inv_dx * inv_dx) * stress;
 
 	//--------------------------------------------------------------------------
 	// 4. 周囲 27 個の格子点への散布

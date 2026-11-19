@@ -32,33 +32,7 @@ layout(r32ui, binding = 3) uniform uimage3D gridIMA;
 layout(binding = 4) uniform sampler3D sdf_tex;
 
 // MPMの粒子群の物理パラメータ
-layout(std140, binding = 1) uniform MPMPhysics {
-	// シミュレーション空間
-	vec3 gravity;		// 重力
-	float timestep;		// 時間間隔
-	vec3 f_normal;		// 地面の法線
-	float f_height;		// 地面の高さ
-	
-	float f_restitution;// 地面の反発係数
-	float f_friction;	// 地面の摩擦係数
-	float dx;			// グリッドの間隔
-	float inv_dx;		// 間隔の逆数
-
-	// 粒子
-	float p_restitution;// 粒子の反発係数
-	float p_vol;		// 粒子の体積
-	float p_mu;			// 粒子のラメ係数
-	float p_lambda;		// 粒子のラメ係数
-
-	float p_mass;		// 粒子の質量
-	float p_radius;		// 粒子の半径
-	float p_overlap;	// 粒子の重なり
-	float p_padding;	// 調整
-
-	// 障害物
-	vec4 obstacle_sphere; // 静的物体の仮説
-	vec4 obstacle_velocity; // 静的物体の仮説
-};
+#include "../common/physics.glsl"
 
 // ビット変換用のヘルパー関数
 float uintToFloat(uint val) { return uintBitsToFloat(val); }
@@ -82,7 +56,9 @@ void main() {
 
 	// 1. グリッドデータ読み込み
 	float m = uintToFloat(imageLoad(gridIMA, coords).x);
-	if (m <= 1e-7) return;	// 質量がほぼゼロなら処理スキップ
+	// 正の小質量も更新する。絶対閾値で除外するとG2Pの重み和が欠け、
+	// 定数速度場に人工的な速度勾配が生じる（工程2、B-1/A-2）。
+	if (m <= 0.0) return;
 
 	vec3 v = vec3(
         uintToFloat(imageLoad(gridIMX, coords).x),
@@ -95,13 +71,8 @@ void main() {
 	v += gravity * timestep;	// 重力を適用
 
 	// 3. 境界条件・当たり判定
-	// [点検] P2G / G2P では格子点 i の位置を i·dx として重みを計算しているが、
-	//   ここでは (i + 0.5)·dx (セル中心) としているため、境界判定の位置が半セル
-	//   ずれる (床が実質 0.5dx 低い、SDF が 0.5dx ずれる)。
-	//   P2G / G2P と揃えるなら pos = vec3(coords) * dx にする。
-	//   また、床以外の領域の端 (6 面) には壁の条件が無い。領域外へ出た粒子は格子に
-	//   寄与できなくなる。
-	vec3 pos = (vec3(coords) + vec3(0.5)) * dx;	// 現在のセルの世界座標の計算
+	// P2G / G2Pと同じ節点位置 i·dx で床とSDFを判定する。
+	vec3 pos = vec3(coords) * dx;	// 現在のセルの世界座標の計算
 
 	float dist = dot(pos, f_normal) - f_height;	// 床との判定・グリッドでの判定なので、ノードが床を貫通しているのかを見ている
 
@@ -123,12 +94,20 @@ void main() {
 			}
 
 			// 速度の更新
-			//   法線成分を -e·v_n で反転させている (反発係数 e)。
-			//   ※ 連続体としての MPM では、格子の境界条件は v_n = 0 (非弾性) とするのが普通で、
-			//     格子速度を反発させると、境界付近の粒子が跳ねたり振動したりする原因になりうる。
-			v = vt - f_restitution * vn;
+			// 侵入法線速度を0にする非弾性境界。f_restitutionは使用しない。
+			v = vt;
 		}
 	}
+
+	// 両端の各3節点を拘束する。上端は size-3 を含める。
+	// 高速移動の全条件で粒子支持域を保証するものではない（B-5、対応台帳参照）。
+	int bound = 3;
+	if (coords.x < bound && v.x < 0.0) v.x = 0.0;
+	if (coords.x >= size.x - bound && v.x > 0.0) v.x = 0.0;
+	if (coords.y < bound && v.y < 0.0) v.y = 0.0;
+	if (coords.y >= size.y - bound && v.y > 0.0) v.y = 0.0;
+	if (coords.z < bound && v.z < 0.0) v.z = 0.0;
+	if (coords.z >= size.z - bound && v.z > 0.0) v.z = 0.0;
 
 
 	//
@@ -149,22 +128,18 @@ void main() {
 	if (all(greaterThanEqual(pos_local, sdf_aabb_min)) && all(lessThanEqual(pos_local, sdf_aabb_max))) {
     
 		// 4. ローカル座標 -> テクスチャUVW座標 (0.0 ~ 1.0) へのマッピング
-		//   [点検] SDF のボクセル値は sdfMin + idx·cellSize (cellSize = 幅 / (res - 1)) の
-		//   「格子点」で計算されているが、texture() はテクセル中心 (idx + 0.5) / res で
-		//   補間する。正確に対応させるなら
-		//   uvw = (pos_local - min) / (max - min) * (res - 1) / res + 0.5 / res とする
-		//   (最大で半ボクセルずれる)。
-		vec3 uvw = (pos_local - sdf_aabb_min) / (sdf_aabb_max - sdf_aabb_min);
+		// SDF生成格子点sdfMin+idx*幅/(res-1)をテクセル中心(idx+0.5)/resへ対応させる。
+		// B-6cの合成平面試験で確認。実メッシュ・境界近傍の精度は対応台帳を参照。
+		vec3 sdf_extent = sdf_aabb_max - sdf_aabb_min;
+        vec3 texSize3D = vec3(textureSize(sdf_tex, 0));
+        vec3 uvw = (pos_local - sdf_aabb_min) / sdf_extent * (texSize3D - 1.0) / texSize3D + 0.5 / texSize3D;
     
 		// 5. 距離のサンプリング
 		float dist_local = texture(sdf_tex, uvw).r;
-		// 等方前提なので注意！！！！
-		// (sdf_model の第 1 列の長さ = x 方向の拡大率でローカル距離をワールド距離に換算している。
-		//  Swing モードの (0.06, 0.4, 0.06) のような非等方スケールでは、距離の値が正しくない)
-		float dist_world = dist_local * length(vec3(sdf_model[0]));// X軸スケールからスケールをかけてワールドでの距離に
+		float dist_world = 0.0; // Set after evaluating the local normal.
     
 		// 6. 衝突判定 (距離が粒子半径より小さければ接触しているとみなす)
-		if (dist_world < p_radius) {
+		{
         
 			// --- 法線(Normal)の計算 (中央差分) ---
 			// テクスチャの1ピクセル分くらいずらしてサンプリングし、勾配を求める
@@ -179,14 +154,18 @@ void main() {
 			float nz = (texture(sdf_tex, uvw + epsZ).r - texture(sdf_tex, uvw - epsZ).r) / (2.0 * texel.z);
         
 			// ローカル空間での法線
-			//   [点検] 上の差分は uvw 空間での勾配である。AABB が立方体でない場合は、
-			//   各成分をその軸の幅 (sdf_aabb_max - sdf_aabb_min) で割らないと、
-			//   ローカル空間の法線の向きにならない。
-			vec3 normal_local = normalize(vec3(nx, ny, nz));
+			// uvw微分をローカル座標の微分へ変換する（B-6b、対応台帳参照）。
+			// Invert both the AABB and texel-center coordinate scales.
+			// The resolution factor cancels only when all three resolutions match.
+			vec3 gradient_local = vec3(nx, ny, nz) / sdf_extent * (texSize3D - 1.0) / texSize3D;
+			vec3 normal_local = gradient_local / max(length(gradient_local), 1e-8);
         
-			// 7. ローカル法線 -> ワールド法線への変換 (正行列の3x3部分を掛ける)
-			// "法線行列はモデル行列の逆行列の転置" になる(らしい)
-			vec3 normal_world = normalize(mat3(transpose(sdf_inv_model)) * normal_local);
+			// 7. 逆転置行列でローカル法線をワールド法線へ変換する。
+			vec3 gradient_world = mat3(transpose(sdf_inv_model)) * normal_local;
+			float gradient_length = length(gradient_world);
+			vec3 normal_world = gradient_world / max(gradient_length, 1e-8);
+			// B-6a: exact for planes, local distance approximation for curved SDFs.
+			dist_world = dist_local / max(gradient_length, 1e-8);
         
 			// 8. 衝突解決 (相対速度の押し出し)
 			//   剛体上の点の速度 v_point = v_trans + ω × r を基準にした相対速度で、
@@ -202,7 +181,9 @@ void main() {
 			float vn = dot(rel_vel, normal_world);
 
 			// 接触 + めり込み条件
-			if (dist_world < p_radius && vn < 0.0) {
+			// A zero/invalid gradient has no defined contact normal: skip the SDF response.
+			if (length(gradient_local) > 1e-8 && gradient_length > 1e-8 && !isnan(gradient_length) && !isinf(gradient_length)
+				&& dist_world < p_radius && vn < 0.0) {
 
 				vec3 vt = rel_vel - vn * normal_world;
 				float vt_len = length(vt);

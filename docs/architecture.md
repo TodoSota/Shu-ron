@@ -1,146 +1,39 @@
-# 設計（Architecture）
+# ソース構成
 
-## ■ 概要
+ビルドの入口は [GPUMPMTex3D.sln](../GPUMPMTex3D.sln)、アプリケーションの入口は [src/main.cpp](../src/main.cpp) です。GPUの計算パスとデータ配置は[実装詳細](implementation.md)に記載しています。
 
-本システムは、MPM（Material Point Method）を用いた物理シミュレーションを核とし、効率的な空間管理と描画を実現するための構成をとっています。
+## アプリケーション・操作
 
-従来の粒子単体のシミュレーションから、**SDF（符号付き距離関数）によるシミュレート空間管理システム**へと拡張されました 。外部ファイル(現在はOBJファイルのみ)から読み込んだ複雑な形状を持つ障害物をSDFテクスチャとして空間内にインスタンス化し、粒子群と同一空間内で相互作用(衝突・発射など)させることが可能となっています。
-また、本システムは `main.cpp` を基軸とした **MVCアーキテクチャを参考に、入力・計算・描画の責務を分離した設計** を採用しております。
+| ファイル | 役割 |
+|---|---|
+| [main.cpp](../src/main.cpp) | 初期化、方式選択、メインループ、UI、再起動、CSV保存 |
+| [core/Window.h](../src/core/Window.h) | GLFWウィンドウ、OpenGL初期化、入力取得、画面更新 |
+| [core/Camera.h](../src/core/Camera.h) | 視点、投影・ビュー行列、カメラ操作 |
+| [core/shader.cpp](../src/core/shader.cpp) | GLSLの読込と相対include展開、コンパイル、リンク |
+| [core/errorcheck.cpp](../src/core/errorcheck.cpp) | OpenGLエラーの確認 |
+| [controller/InteractionController.cpp](../src/controller/InteractionController.cpp) | Shoot・Swing、軌道プレビュー、操作の再実行 |
+| [core/MeshResource.h](../src/core/MeshResource.h) | OBJの読込、描画用メッシュとSDFの生成・保持 |
+| [sdf/SDFInstance.h](../src/sdf/SDFInstance.h) | 障害物ごとの姿勢・速度・変換行列と履歴用スナップショット |
 
----
+## 物理・評価・履歴
 
-## ■ シミュレーションシステムの構造
+| ファイル・フォルダ | 役割 |
+|---|---|
+| [mpm/IMpmSimulator.cpp](../src/mpm/IMpmSimulator.cpp) | 粒子の初期配置、物理UBOの更新、変形異常の診断保存 |
+| [mpm/IMpmObject.cpp](../src/mpm/IMpmObject.cpp) | 計算と描画で使う粒子VAO/VBOのダブルバッファ |
+| [mpm/3dtexture/](../src/mpm/3dtexture/) | `MpmObject3DTEX` が格子画像を所有し、`MpmSimulator3DTEX` が計算パスを実行 |
+| [mpm/ssbo/](../src/mpm/ssbo/) | `MpmObjectSSBO` が格子バッファを所有し、`MpmSimulatorSSBO` が計算パスを実行 |
+| [mpm/shaders/](../src/mpm/shaders/) | 保存方式別の計算パス、評価・履歴用シェーダー、`common/` の共有GLSL定義 |
+| [mpm/MpmParticle.h](../src/mpm/MpmParticle.h)・[MpmPhysics.h](../src/mpm/MpmPhysics.h) | 粒子バッファと物理UBOのCPU側レイアウト |
+| [mpm/MpmEvaluator.cpp](../src/mpm/MpmEvaluator.cpp) | GPUパス計測、粒子評価、代表粒子とFPSの記録、CSV出力 |
+| [mpm/TimelineManager.cpp](../src/mpm/TimelineManager.cpp) | GPU粒子履歴とCPU障害物履歴の記録・復元 |
 
-本システムは以下の役割で構成されています：
+## 描画・その他
 
-1. **Controller (操作・状態管理)**
-	 - `Window` や `Camera` からの入力を受け取り、シミュレーションの状態やユーザーインタラクション（弾丸の発射、スイング軌道の計算など）を決定します。
-2. **Model (力学計算とSDF管理)**
-	 - MPMの物理演算パイプライン（P2G, Grid計算, G2P, 粒子更新）をGPU上で実行し、SDFインスタンスとの衝突を処理します。状態は `MpmSimulator` クラスに隠蔽されています。
-3. **View (描画・レンダリング)**
-	 - `Renderer` クラスがOpenGLの生API（VAO/VBOの管理やシェーダーの切り替え）を統括し、粒子の描画、障害物の描画、およびUIやプレビュー軌道の描画を行います。
-
----
-
-## ■ 全体処理フロー
-
-シミュレーションの1フレームは、`main.cpp`の制御により以下のフローで進行します：
-
-```text
-[ CPU: 入力更新 (Controller) ]
-  ・カメラ視点の更新
-  ・マウスクリック/ドラッグによるSDFインスタンスの軌道・速度計算
-      ↓
-[ GPU: 物理演算ステップ (Model) ]
-  1. mpm_setup (初期化)
-  2. mpm_p2g   (粒子→格子)
-  3. mpm_grid  (格子計算/当たり判定)
-  4. mpm_g2p   (格子→粒子)
-  5. mpm_move  (位置更新)
-      ↓
-[ CPU/GPU: 描画 (View) ]
-  ・Rendererによる全オブジェクトの描画
-```
-
-1. **入力更新**：`InteractionController` にてマウス入力を処理します。「弾丸発射モード」ではレイキャストによる初期位置・速度の更新、「スイングモード」ではドラッグ量とカメラの方向ベクトルから振り下ろす回転軸とキネマティック軌道を計算します。
-
-2. **SDFインスタンス更新**：`SDFInstance`にて、タイムステップに応じた位置更新とモデル行列（および逆行列）の再計算を行います。
-
-3. **物理演算(GPU)**：`MpmSimulator` がUBO（Uniform Buffer Object）を更新し、5つのコンピュートシェーダーを連続実行します。
-
-4. **当たり判定(SDF)**：`mpm_grid` ステップにおいて、CPUから転送されたSDFテクスチャとインスタンスの逆行列を用いて、格子点上での衝突判定とペナルティ法による応答計算を行います。
-
-5. **描画**：`Renderer` クラスを介して、パーティクル（点）、障害物（メッシュ）、スイングのプレビュー軌道（線）を描画します。
-
----
-### GPU における計算ステップ
-
-#### 1. P2G (Particle to Grid)
- - 粒子の物理量（質量・運動量など）をグリッドへ転送
- - 周囲のグリッドに対して重み付きで分配
-
-##### 特徴
- - 3Dテクスチャへの書き込み
- - Atomic操作（CASループ）による競合回避
-
----
-
-#### 2. Grid 計算
- - グリッド上で力・速度の更新
- - 境界条件および**SDFを用いた障害物との当たり判定**の適用
-
-##### 役割
- - 粒子間相互作用をグリッド上で解決
- - インスタンス化された外部オブジェクトとの接触計算
-
----
-
-#### 3. G2P (Grid to Particle)
- - グリッドの結果を粒子へ反映
- - 速度・変形勾配などを更新
-
-##### 特徴
- - imageLoad による直接アクセス
- - 近傍探索不要
----
-
-#### 4. 粒子更新
- - 最終的な粒子位置の更新
- - シミュレーション結果の確定
-
----
-
-## ■ モジュール構成
-本プロジェクトは、汎用的な機能を管理する `core` フォルダと、MPMシミュレーションの核となる機能を管理する `mpm` フォルダ、操作を担う`controller`フォルダなどに分離して構成されています。
-### ● src
- - `main.cpp`
-プログラムのエントリポイント。GLFW/ImGuiの初期化、各システム（Controller, Simulator, Renderer）のインスタンス化、およびメインループの進行（司令塔）のみを担当します。
-### ● src/controller/ （操作・入力管理）
- - `InteractionController.h / .cpp`
-プレイヤーからの入力（マウス・UI）を受け取り、レイキャスト計算やスイング運動のキネマティック計算を行い、`SdfInstance` の状態を更新します。
-### ● src/core/ （基本システム・描画補助・リソース管理）
- - `Camera.h`
-視点制御（Orbit/FPSモード）を担当。視点から`view`と`projection`を常に計算し、レイキャスト用の逆行列計算を提供します。
- - `MeshResource.h`
-外部モデル（OBJ）の読み込み、VAO/VBOの生成、および**各ボクセルからメッシュ面への最近接点探索によるSDF（3Dテクスチャ）の生成**を担うリソースクラスです。
- - `Window.h`,`Shader.*`, `ErrorCheck.h`
-ウィンドウ管理、シェーダーコンパイル支援、OpenGLエラー検知などを担当。
-### ● src/sdf/ (SDFインスタンス管理)
- - `SdfInstance.h`
-`MeshResource`のデータを共有(`std::shared_ptr`)しつつ、シミュレーション空間内でのオブジェクトの位置・回転・スケール・速度、およびシェーダーへ送るモデル行列（逆行列含む）を独立して管理するインスタンスクラスです。
-### ● src/mpm/（シミュレーション本体）
- - `MpmSimulator.h / .cpp`
-MPMの計算エンジン本体。コンピュートシェーダーのロード、UBOのGPU転送、および毎フレームの `glDispatchCompute` を一手に引き受けます。
- - `MpmObject.h / .cpp`
-MPMに必要な粒子データ（SSBO）や格子データ（3Dテクスチャ）のリソース管理。
- - `MpmPhysics.h`
-シミュレーション空間や材料特性などの物理パラメータをまとめた構造体。
- - `Shader/` (コンピュートシェーダー群)：`mpm_setup`, `mpm_p2g`, `mpm_grid`, `mpm_g2p`, `mpm_move`
-### ● src/render/（描画用シェーダー群）
- - `Renderer.h / .cpp`
-床、MPMパーティクル、障害物、スイング予測軌道の描画を担うクラス。OpenGLの描画命令が隠蔽されています。
- - `point.*` / `mesh.*`
-粒子および障害物メッシュの描画。
-
----
-
-## ■ 設計上の工夫
-
-本システムでは以下の点を重視して設計を行いました：
-
-### 1. リソースとインスタンスの完全分離（メモリ最適化）
-外部モデルからSDFを生成する処理（$O(R^3)$ の計算量）は非常に重いため、MeshResourceとして一度だけ生成・保持します。実際に空間に配置して動かすオブジェクトはSDFInstanceとして軽量に管理することで、複数オブジェクトの配置にも耐えうる設計としています。
-
-### 2. GPU処理への最適化とデータ構造の統一
- - 全物理ステップをコンピュートシェーダーで実装し、3Dテクスチャを用いることで粒子群の近傍探索を不要化しました。
- - 粒子・グリッドをGPUネイティブな形式で管理し、メモリアクセスの一貫性を確保しています。
- - 毎フレーム呼ばれるシェーダーの Uniform ロケーション検索を事前キャッシュすることで、CPU側のオーバーヘッドを削減しています。
-
-### 3. インタラクティブな操作系（Shoot & Swing）
-独立した `Camera` クラスの逆行列を利用することで、スクリーン座標から3D空間のレイを正確に計算しています。これにより、オブジェクトを任意の方向へ発射（Shoot）したり、マウスクリックからスイングの支点・回転軸をリアルタイムに計算して振り下ろす（Swing）といった直感的な操作を実現しています。
-
----
-
-## ■ 補足
-
-未使用となった従来の粒子単体シミュレーションコードや旧仕様のクラス（`Object.*`など）は`legacy`ディレクトリに分離・保管しています。
+| ファイル・フォルダ | 役割 |
+|---|---|
+| [render/Renderer.cpp](../src/render/Renderer.cpp) | 描画パスと描画設定UI |
+| [render/](../src/render/) | Surface、Splat、影、SSAO、粉塵、描画ターゲット、GLSL |
+| `src/assets/`・[ImGui/](../ImGui/) | 実行時に読むOBJと、UIライブラリ・フォント |
+| [legacy/](../legacy/) | 旧実装と旧移流シェーダー。一部のC++ファイルは現行プロジェクトにも登録 |
+| [tools/validation/](../tools/validation/) | 独立参照、GPUパス、C++シミュレーターの回帰試験 |

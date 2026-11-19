@@ -13,18 +13,7 @@ layout(location = 0) in vec4 position;
 layout(location = 1) in int state;
 
 // 粒子のデータ構造 (シミュレーションのシェーダーと同じもの)。材質フラグ padding[0] を読むために使う
-struct mpmParticle {
-	vec4 position;
-	vec4 velocity;
-	mat4 affineC;
-	mat4 deformation;
-	float alpha;
-	float q;
-	float vc;
-	int state;
-	int scale;
-	int padding[3];
-};
+#include "../../mpm/shaders/common/particle.glsl"
 layout(std430, binding = 0) readonly buffer mpmBuffer { mpmParticle p[]; };
 
 // Splat モードの surfel (SplatSurface が作る。surfelDebug > 0 か hideInterior のときだけ読む)

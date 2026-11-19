@@ -24,7 +24,7 @@ MpmSimulator3DTEX::MpmSimulator3DTEX(GLsizei particleCount, int gridSize, float 
         // 通常
         mpmP2G = loadCompute("src/mpm/shaders/3dtexture/mpm_p2g_3dtex.comp");
         mpmG2P = loadCompute("src/mpm/shaders/3dtexture/mpm_g2p_3dtex.comp");
-        std::cout << "Loaded MPM Shaders: Cubic B-Spline Interpolation" << std::endl;
+        std::cout << "Loaded MPM Shaders: Quadratic B-Spline Interpolation" << std::endl;
     }
     else {
         // Linear
@@ -39,12 +39,15 @@ MpmSimulator3DTEX::MpmSimulator3DTEX(GLsizei particleCount, int gridSize, float 
 
     // 共通部分の Uniform の初期化
     initCommonUniforms();
+    initDeformationValidation();
 }
 
 // --- メイン処理 (演算パイプライン) ---
 
 /// コンピュートシェーダーを実行し、シミュレーションを1ステップ進める
 void MpmSimulator3DTEX::step(const SdfInstance& obstacle) {
+    if (!simulationError.empty()) return;
+    prepareDeformationValidation();
     // ダブルバッファの選択
     GLuint readVbo = mpmObject->getReadVbo();
     GLuint writeVbo = mpmObject->getWriteVbo();
@@ -100,6 +103,7 @@ void MpmSimulator3DTEX::step(const SdfInstance& obstacle) {
     glDispatchCompute(particleGroups, 1, 1);
     evaluator.endTimer("P2G");
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+    if (checkDeformationFault(obstacle)) return;
 
     // [Grid] グリッド上での力学計算と境界(SDF)処理
     glUseProgram(mpmGrid);
@@ -114,6 +118,7 @@ void MpmSimulator3DTEX::step(const SdfInstance& obstacle) {
     glDispatchCompute(particleGroups, 1, 1);
     evaluator.endTimer("G2P");
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
+    if (checkDeformationFault(obstacle)) return;
 
     // ping-pongスワップ(ダブルバッファの切り替え) 
     mpmObject->swapBuffers();

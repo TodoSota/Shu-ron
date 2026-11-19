@@ -1,7 +1,7 @@
 #version 430 core
 
 //==============================================================================
-// mpm_g2p.comp : G2P (Grid to Particle) ステップ ― 線形 (トライリニア) 補間版
+// mpm_g2p.comp : G2P (Grid to Particle) ステップ ― 線形補間版
 //
 // 目的:
 //   格子上で更新された速度場を粒子へ集め (gather)、
@@ -11,7 +11,6 @@
 //       と硬化 (Klár et al. 2016)、体積補正 (Tampubolon et al. 2017)
 //     ・粒子位置の移流 x_p ← x_p + Δt v_p
 //   を行い、結果をダブルバッファの書き込み側へ出力する。
-//   mpm_g2p.comp との違いは、重み関数と影響範囲 (2×2×2) だけ。
 //
 // 並列化の方針:
 //   1 スレッド = 1 粒子。格子は読むだけなので atomic 操作は不要。
@@ -19,121 +18,40 @@
 //   ping-pong 方式にして、読み書きの競合を避けている。
 //==============================================================================
 
-// 1グループ 64スレッド
-layout(local_size_x = 64) in;
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
-// テクスチャ 4枚 (P2G → Grid で更新された運動量 X/Y/Z と質量 A。ここでは読み出しのみ)
-layout(r32ui, binding = 0) uniform uimage3D gridIMX;
-layout(r32ui, binding = 1) uniform uimage3D gridIMY;
-layout(r32ui, binding = 2) uniform uimage3D gridIMZ;
-layout(r32ui, binding = 3) uniform uimage3D gridIMA;
+// GridNode stores float bit patterns in x-fastest order (std430, 16 bytes per node).
+uniform int u_gridSize;
+struct GridNode {
+    uint x;
+    uint y;
+    uint z;
+    uint m;
+};
+layout(std430, binding = 2) readonly buffer GridBuffer {
+    GridNode grid[];
+};
+
+uint gridIndex(ivec3 coords) {
+    return uint(coords.x + u_gridSize * (coords.y + u_gridSize * coords.z));
+}
 
 // 粒子のデータ構造 (C++ 側 MpmParticle と std430 で一致させる。192 バイト)
-struct mpmParticle {
-	vec4 position;		// 位置
-	vec4 velocity;		// 速度 + padding
-	mat4 affineC;		//アフィン速度行列 (mat3 分のみ値あり)
-	mat4 deformation;	// 変形勾配 (mat3 分のみ値あり)
-
-	// 砂の塑性変形パラメーター
-	 float alpha;		//降伏面の大きさ
-	 float q;			//硬化状態
-	 float vc;			//変化の際の体積変化
-	 int state;			//状態(変化)
-	 int scale;			//スケール
-	 int padding[3];		//調整
-};
+#include "../common/particle.glsl"
 
 // ダブルバッファ: binding 0 = 現ステップの粒子 (読み出し専用)、binding 1 = 次ステップの粒子 (書き込み専用)
 layout(std430, binding = 0) readonly buffer ParticleIn { mpmParticle particleIn[]; };
 layout(std430, binding = 1) writeonly buffer ParticleOut { mpmParticle particleOut[]; };
 
 // MPMの粒子群の物理パラメータ (C++ 側 MpmPhysics と std140 で一致させる UBO)
-// ※ obstacle_velocity の宣言が無いが、末尾のメンバなのでオフセットはずれない
-layout(std140, binding = 1) uniform MPMPhysics {
-	// シミュレーション空間
-	vec3 gravity;		// 重力
-	float timestep;		// 時間間隔
-	vec3 f_normal;		// 地面の法線
-	float f_height;		// 地面の高さ
-
-	float f_restitution;// 地面の反発係数
-	float f_friction;	// 地面の摩擦係数
-	float dx;			// グリッドの間隔
-	float inv_dx;		// 間隔の逆数
-
-	// 粒子
-	float p_restitution;// 粒子の反発係数
-	float p_vol;		// 粒子の体積
-	float p_mu;			// 粒子のラメ係数
-	float p_lambda;		// 粒子のラメ係数
-
-	float p_mass;		// 粒子の質量
-	float p_radius;		// 粒子の半径
-	float p_overlap;	// 粒子の重なり
-	float p_padding;	// 調整
-
-	// 障害物
-	vec4 obstacle_sphere; // 静的物体の仮説
-};
+#include "../common/physics.glsl"
 
 //------------------------------------------------------------------------------
 // 対称行列の固有値分解 (巡回 Jacobi 法) ― mpm_p2g.comp と同一
-//   [点検] 回転角の符号が逆で、非対角成分が収束しない (詳細は mpm_p2g.comp の同じ関数のコメント)。
+//   回転角はatan(-2a_pq, a_qq-a_pp)。退化・反転はC-9の診断・停止仕様（対応台帳）参照。
 //------------------------------------------------------------------------------
 // 固有値分解
-void jacobiEigen(inout mat3 S, out mat3 V) {
-    V = mat3(1.0);
-
-	// 実用上は 3-5 回で十分 (3 を 5 に変えても可)
-    for (int iter = 0; iter < 3; ++iter) {
-        for (int p = 0; p < 2; ++p)
-        for (int q = p + 1; q < 3; ++q) {
-
-            float app = S[p][p];
-            float aqq = S[q][q];
-            float apq = S[p][q];
-
-            if (abs(apq) < 1e-6) continue;
-
-            float phi = 0.5 * atan(2.0 * apq, aqq - app);
-            float c = cos(phi);
-            float s = sin(phi);
-
-            mat3 J = mat3(1.0);
-            J[p][p] =  c; J[p][q] = s;
-            J[q][p] = -s; J[q][q] = c;
-
-            S = transpose(J) * S * J;
-            V = V * J;
-        }
-    }
-}
-
-//------------------------------------------------------------------------------
-// 3×3 行列の特異値分解 F = U Σ Vᵀ ― mpm_p2g.comp と同一
-//   Σ は 0.01 以上にクランプされる。
-//------------------------------------------------------------------------------
-// 特異値分解
-void svd(mat3 F, out mat3 U, out mat3 Sigma, out mat3 V) {
-    mat3 S = transpose(F) * F;
-
-    jacobiEigen(S, V);
-
-    Sigma = mat3(0.0);
-	// ゼロ除算の恐れがあるので、微小な値を足す(エプシロン)
-    Sigma[0][0] = sqrt(max(S[0][0], 1e-4));
-    Sigma[1][1] = sqrt(max(S[1][1], 1e-4));
-    Sigma[2][2] = sqrt(max(S[2][2], 1e-4));
-
-    mat3 invSigma = mat3(0.0);
-
-	invSigma[0][0] = 1.0 / Sigma[0][0];
-	invSigma[1][1] = 1.0 / Sigma[1][1];
-	invSigma[2][2] = 1.0 / Sigma[2][2];
-
-    U = F * V * invSigma;
-}
+#include "../common/deformation.glsl"
 
 void main() {
 	// 担当する粒子番号 (範囲外のスレッドは何もしない)
@@ -145,62 +63,55 @@ void main() {
 	particleOut[idx] = particleIn[idx];
 
 	//--------------------------------------------------------------------------
-	// 1. 座標と重みの計算 (P2G と同じ線形補間。P2G と同じ式でないと運動量が保存されない)
+	// 1. 座標と重みの計算 (P2G と同じ線形補間)
 	//--------------------------------------------------------------------------
 	// 座標とインデックス
 	vec3 x = particleIn[idx].position.xyz;
 	vec3 fx = x * inv_dx;
 	ivec3 base = ivec3(floor(fx));
 	vec3 weight_dist = fx - vec3(base);
-
-	// 線形補間 (テント関数)
 	vec3 w[2];
 	w[0] = 1.0 - weight_dist;
 	w[1] = weight_dist;
 
+	// B-4: Dp/dx² = diag(t * (1-t)). Cap its inverse at cell faces.
+	// Use the same floor in linear P2G and G2P. See stage5-linear.md.
+	const float minMoment = 1.0 / 16.0;
+	vec3 invMoment = vec3(1.0) / max(weight_dist * (1.0 - weight_dist), vec3(minMoment));
+
 	//--------------------------------------------------------------------------
 	// 2. グリッドからの速度・アフィン行列の回収
 	//     v_p = Σ_i w_ip v_i
-	//     C_p = (4 / dx²) Σ_i w_ip v_i (x_i - x_p)ᵀ
-	//   [点検] 係数 4/dx² は 2次 B スプライン用。線形補間では慣性テンソル D_p が定数にならない
-	//   ため、D_p⁻¹ を粒子ごとに計算する必要がある (mpm_p2g_Linear.comp のコメントを参照)。
+	//     C_p = (Σ_i w_ip v_i (x_i - x_p)ᵀ) D_reg⁻¹    (APIC)
 	//--------------------------------------------------------------------------
 	vec3 new_v = vec3(0.0);
 	mat3 new_C = mat3(0.0);
 
-	for (int i = 0; i < 2; i++) {
-		for (int j = 0; j < 2; j++) {
-			for (int k = 0; k < 2; k++) {
+	for (int i = 0; i < 3; i++) {
+		for (int j = 0; j < 3; j++) {
+			for (int k = 0; k < 3; k++) {
 				ivec3 coords = base + ivec3(i, j, k);
-				if (any(lessThan(coords, ivec3(0))) || any(greaterThanEqual(coords, imageSize(gridIMX)))) {
+				if (any(lessThan(coords, ivec3(0))) || any(greaterThanEqual(coords, ivec3(u_gridSize)))) {
 					continue; // 範囲外のノードへの加算をスキップ
 				}
 				float weight = w[i].x * w[j].y * w[k].z;
 
-				// 質量がほぼ 0 の格子点 (粒子が無い) は速度が定義できないので飛ばす
-				float m = uintBitsToFloat(imageLoad(gridIMA, coords).x);
-				if (m < 1e-7) continue;
+				// 空節点だけを除外する。正の小質量を捨てると定数速度も再現できない。
+				float m = uintBitsToFloat(grid[gridIndex(coords)].m);
+				if (m <= 0.0) continue;
 
 				// 格子点の速度 = 運動量 / 質量
 				//   (Grid ステップで境界条件を適用した後、運動量の形で格納し直してある)
 				vec3 g_v = vec3(
-					uintBitsToFloat(imageLoad(gridIMX, coords).x),
-                    uintBitsToFloat(imageLoad(gridIMY, coords).x),
-                    uintBitsToFloat(imageLoad(gridIMZ, coords).x)
+					uintBitsToFloat(grid[gridIndex(coords)].x),
+                    uintBitsToFloat(grid[gridIndex(coords)].y),
+                    uintBitsToFloat(grid[gridIndex(coords)].z)
 				) / m;
 
-				// [点検] 下の 2 行で、dpos はワールド単位 (× dx) で、係数は 4 · inv_dx なので、
-				//   new_C = 4/dx · Σ w v (x_i - x_p)ᵀ となり、正しい APIC の
-				//   C = 4/dx² · Σ w v (x_i - x_p)ᵀ の dx 倍 (grid 128 では約 1/85) になる。
-				//   線形な速度場を与えた数値検証でも C = dx · ∇v となった。
-				//   Taichi の mls-mpm88 では、G2P の dpos を格子単位 (× dx なし) で
-				//   計算しているので 4 · inv_dx で正しくなる。修正するには
-				//   dpos = vec3(i, j, k) - weight_dist とするか、係数を 4.0 * inv_dx * inv_dx にする。
-				//   この C は F の更新 (下の 3.) にも使われるので、修正すると
-				//   ひずみと応力が約 1/dx 倍になる。ヤング率と時間刻みの再調整が必要。
-				vec3 dpos = (vec3(i, j, k) - weight_dist) * dx;
+				// APIC: C = sum(w * v_i * r_i^T) * Dp^-1.
+				vec3 weightedOffset = weight * (vec3(i, j, k) - weight_dist) * invMoment * inv_dx;
 				new_v += weight * g_v;
-				new_C += 4.0 * inv_dx  * weight * outerProduct(g_v, dpos);
+				new_C += outerProduct(g_v, weightedOffset);
 			}
 		}
 	}
@@ -219,6 +130,7 @@ void main() {
 	//--------------------------------------------------------------------------
 	mat3 U, sig, V;
 	svd(F_new, U, sig, V);
+	if (invalidDeformation(F_new, U, sig, V, idx, 2u)) return;
 
 	// ひずみ空間での処理
 	float epsilon[3];
@@ -247,11 +159,8 @@ void main() {
 	//   1: 弾性域 → そのまま
 	//   2: 塑性域 → 偏差方向に δγ だけ戻して降伏面上へ射影
 	int next_state = 0;
-	// [点検] e_hat_norm < 1e-8 (せん断がほぼ 0) の場合も state 0 にしているが、
-	//   圧縮 (tr ε < 0) でせん断が 0 なら δγ < 0 で本来は弾性 (state 1) になる。
-	//   Klár et al. の Case I は tr(ε) > 0 のときだけである。
-	//   ただし浮動小数点ではほぼ起こらない条件なので、実際の影響は小さい。
-	if (e_hat_norm < 1e-8 || tr_e > 0.0) {
+	// 引張を先に判定し、せん断ノルム0の等方圧縮は弾性判定に進める。
+	if (tr_e > 0.0) {
 		// 特になし
 		new_epsilon = vec3(0.0); // 0 とするとつぶれる可能性アリ
 		//new_epsilon = epsilon_v;
@@ -270,10 +179,7 @@ void main() {
 	//   q ← q + δq、δq = ||ε|| (state 0) / δγ (state 2) / 0 (弾性)
 	//   φ_F = h0 + (h1 q - h3) exp(-h2 q)   (Klár et al. 2016 式 (29)。単位は度)
 	//   α   = sqrt(2/3) · 2 sin φ_F / (3 - sin φ_F)   (Drucker–Prager 円錐の開き)
-	//   [点検] Klár et al. の値は h0 = 35, h1 = 9, h2 = 0.2, h3 = 10 だが、ここは h3 = 3 になっている。
-	//   q = 0 での摩擦角は 35 - 3 = 32° になる。一方、C++ 側
-	//   (MpmSimulator::resetParticles) の α の初期値 0.267765 は φ = 25°
-	//   (h3 = 10 の場合) に相当するので、初期値と更新式が一致していない。
+	//   h0=35, h1=9, h2=0.2, h3=10。q=0でφ=25°、初期alpha=0.267765と連続。
 	//--------------------------------------------------------------------------
 	float delta_q = 0.0;
 	if (next_state == 0) {
@@ -283,7 +189,7 @@ void main() {
 	}
 
 	delta_q = delta_q + particleIn[idx].q;
-	float phi = 35.0 + (9.0 * delta_q - 3.0) * exp(-0.2 * delta_q);
+	float phi = 35.0 + (9.0 * delta_q - 10.0) * exp(-0.2 * delta_q);
 	phi = radians(phi);
 
 	//--------------------------------------------------------------------------

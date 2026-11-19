@@ -4,35 +4,55 @@
 #include "TimelineManager.h"
 #include "../core/Shader.h"
 #include "../mpm/MpmParticle.h"
-#include <GLFW/glfw3.h>
+#include <algorithm>
+#include <iostream>
+#include <limits>
 
 // コンストラクタ
-/// @param [in] maxFrames リングバッファの容量
+/// @param [in] requestedFrames リングバッファに要求する最大フレーム数
 /// @param [in] particleCount 粒子数
 /// @param [in] sdfCount 存在するオブジェクト
-TimelineManager::TimelineManager(int maxFrames, int particleCount, int sdfCount)
-    : maxFrames(maxFrames), particleCount(particleCount), sdfCount(sdfCount),
-    currentFrameCount(0), headIndex(0), playbackFrame(0)
+TimelineManager::TimelineManager(int requestedFrames, int particleCount, int sdfCount)
+    : maxFrames(0), particleCount(particleCount), sdfCount(sdfCount),
+      frameStride(0),
+      currentFrameCount(0), headIndex(0), playbackFrame(0)
 {
-    // メンバ変数取得
-    particleBytes = sizeof(MpmParticle);
-    frameStride = particleBytes * static_cast<size_t>(particleCount);
+    if (requestedFrames <= 0 || particleCount <= 0 || sdfCount <= 0) return;
 
-    // コンピュートシェーダーのロード
+    constexpr GLint64 historyBudget = 128LL * 1024 * 1024;
+    GLint64 maxBlockBytes = 0;
+    glGetInteger64v(GL_MAX_SHADER_STORAGE_BLOCK_SIZE, &maxBlockBytes);
+    const auto maxBytes = (std::min)({ historyBudget, maxBlockBytes,
+        static_cast<GLint64>((std::numeric_limits<GLsizeiptr>::max)()) });
+    const auto bytesPerFrame = static_cast<GLint64>(sizeof(MpmParticle)) * particleCount;
+    if (bytesPerFrame > maxBytes) return;
+    frameStride = static_cast<size_t>(bytesPerFrame);
+    int frames = (std::min)(requestedFrames, static_cast<int>(maxBytes / frameStride));
+    if (frames <= 0) return;
+
+    sdfHistory.resize(static_cast<size_t>(frames) * sdfCount);
     recordProgram = loadCompute("src/mpm/shaders/timeline_record.comp");
-
-    // Uniform ロケーションの取得
+    if (recordProgram == 0) return;
     writeOffsetLoc = glGetUniformLocation(recordProgram, "writeOffset");
 
-    // バッファ取得
     glGenBuffers(1, &historyVbo);
-    assert(historyVbo != 0); // バッファ生成の成功チェック
-
+    if (historyVbo == 0) return;
     glBindBuffer(GL_ARRAY_BUFFER, historyVbo);
-    glBufferData(GL_ARRAY_BUFFER, frameStride * static_cast<size_t>(maxFrames), nullptr, GL_DYNAMIC_COPY);
+    while (frames > 0) {
+        const auto bytes = static_cast<GLsizeiptr>(frameStride * frames);
+        glBufferData(GL_ARRAY_BUFFER, bytes, nullptr, GL_DYNAMIC_COPY);
+        GLint64 allocated = 0;
+        glGetBufferParameteri64v(GL_ARRAY_BUFFER, GL_BUFFER_SIZE, &allocated);
+        if (allocated == bytes) {
+            maxFrames = frames;
+            break;
+        }
+        std::cerr << "Timeline allocation failed (" << bytes << " bytes, GL error "
+                  << glGetError() << "); trying fewer frames.\n";
+        frames /= 2;
+    }
     glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-    sdfHistory.resize(static_cast<size_t>(maxFrames) * static_cast<size_t>(sdfCount));
+    sdfHistory.resize(static_cast<size_t>(maxFrames) * sdfCount);
 }
 
 /// デストラクタ
@@ -45,6 +65,7 @@ TimelineManager::~TimelineManager() {
 /// @param [in] sourceVbo シミュレーションで使用している粒子のVBO
 /// @param [in] sdfs シミュレーションで使用しているSDFオブジェクト
 void TimelineManager::recordFrame(GLuint sourceVbo, const SdfInstance* sdfs) {
+    if (maxFrames == 0) return;
     assert(sdfs != nullptr);
 
     // データバッファのバインド
@@ -56,34 +77,12 @@ void TimelineManager::recordFrame(GLuint sourceVbo, const SdfInstance* sdfs) {
     glUseProgram(recordProgram);
     glUniform1ui(writeOffsetLoc, static_cast<GLuint>(headIndex * particleCount)); // Uniform 変数の送信
     glDispatchCompute(particleGroups, 1, 1);
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
 
     // バインドの解除
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, 0);  // 計算用の VBO
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, 0); // 結果用の VBO
 
-    // 以下は glCopyBufferSubData で記録していた旧実装 (コンピュートシェーダー方式に置き換え済み)
-    /*
-    // オフセット計算を size_t で(64bit環境でも稼働するため)
-    size_t writeOffset = static_cast<size_t>(headIndex) * frameStride;
-
-    glBindBuffer(GL_COPY_READ_BUFFER, sourceVbo);
-    glBindBuffer(GL_COPY_WRITE_BUFFER, historyVbo);
-    
-    // size_t を GLintptr と GLsizeiptr へキャストして、バッファ内容をコピー
-    glCopyBufferSubData(
-        GL_COPY_READ_BUFFER,
-        GL_COPY_WRITE_BUFFER,
-        0,
-        static_cast<GLintptr>(writeOffset),
-        static_cast<GLsizeiptr>(frameStride)
-    );
-
-    // 書き込み対象をバインド
-    glBindBuffer(GL_COPY_READ_BUFFER, 0);
-    glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
-    */
-    
     // SDF状態の記録
     for (int i = 0; i < sdfCount; ++i) {
         int index = headIndex * sdfCount + i;
@@ -105,6 +104,7 @@ void TimelineManager::recordFrame(GLuint sourceVbo, const SdfInstance* sdfs) {
 /// @param [in] targetVbo 書き込み先となるシミュレーションで使用している粒子のVBO
 /// @param [in] sdfs シミュレーションで使用しているSDFオブジェクト
 void TimelineManager::restoreToFrame(int logicalFrame, GLuint targetVbo, SdfInstance* sdfs) {
+    if (maxFrames == 0) return;
     assert(sdfs != nullptr);
     assert(logicalFrame >= 0 && logicalFrame < currentFrameCount);
 

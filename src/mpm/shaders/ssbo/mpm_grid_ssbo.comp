@@ -1,144 +1,227 @@
 #version 430 core
 
-// 8*8*8 のスレッドグループでグリッド全体を走査
+//==============================================================================
+// mpm_grid.comp : Grid (格子) 更新ステップ
+//
+// 目的:
+//   P2G で集めた格子点ごとの「運動量 (力積込み)」と「質量」から格子点の速度を求め、
+//     ・重力 (外力) の適用
+//     ・床 (無限平面) との境界条件: 法線方向の侵入を止め、Coulomb 摩擦を適用
+//     ・SDF で表した剛体障害物との境界条件: 障害物の速度に対する相対速度で
+//       同じく侵入を止め、Coulomb 摩擦を適用 (一方向連成: 砂は剛体を押し返さない)
+//   を行い、結果を「運動量」の形で格子に書き戻す。
+//
+//   MPM では境界条件を粒子ではなく格子の速度に課すのが基本であり、
+//   この段階が衝突処理の本体になる。
+//
+// 並列化の方針: 1 スレッド = 1 格子点。8×8×8 のグループで格子全体を覆う。
+//   各スレッドは自分の格子点だけを読み書きするので atomic 操作は不要。
+//==============================================================================
+
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 
+// GridNode stores float bit patterns in x-fastest order (std430, 16 bytes per node).
 uniform int u_gridSize;
-
-// SSBO用の格子データ構造
 struct GridNode {
-	uint x;
-	uint y;
-	uint z;
-	uint m;
+    uint x;
+    uint y;
+    uint z;
+    uint m;
 };
-
-// SSBOバインディング (binding = 2)
 layout(std430, binding = 2) buffer GridBuffer {
-	GridNode grid[];
+    GridNode grid[];
 };
 
-// SDF テクスチャ 1枚 (既存実装通り binding = 4 を維持)
+uint gridIndex(ivec3 coords) {
+    return uint(coords.x + u_gridSize * (coords.y + u_gridSize * coords.z));
+}
+// SDF テクスチャ 1枚
+//   障害物メッシュのローカル空間 (AABB に余白を加えた範囲) で、符号付き距離を R32F で格納したもの。
+//   線形補間でサンプリングする (MeshResource::generateSDF で生成)
 layout(binding = 4) uniform sampler3D sdf_tex;
 
-// MPMの粒子群の物理パラメータ (既存コードと完全同一)
-layout(std140, binding = 1) uniform MPMPhysics {
-	vec3 gravity;		float timestep;
-	vec3 f_normal;		float f_height;
-	float f_restitution;float f_friction;
-	float dx;			float inv_dx;
-	float p_restitution;float p_vol;
-	float p_mu;			float p_lambda;
-	float p_mass;		float p_radius;
-	float p_overlap;	float p_padding;
-	vec4 obstacle_sphere; 
-	vec4 obstacle_velocity;
-};
+// MPMの粒子群の物理パラメータ
+#include "../common/physics.glsl"
 
-// SDF のユニフォーム変数 (既存コードと完全同一)
+// ビット変換用のヘルパー関数
+float uintToFloat(uint val) { return uintBitsToFloat(val); }
+uint floatToUint(float val) { return floatBitsToUint(val); }
+
+// SDF のユニフォーム変数 (障害物 1 個分の姿勢と速度。MpmSimulator::step で毎ステップ設定)
 uniform mat4 sdf_model;
 uniform mat4 sdf_inv_model;
 uniform vec3 sdf_velocity;
 uniform vec3 sdf_aabb_min;
 uniform vec3 sdf_aabb_max;
-uniform vec3 sdf_angular_velocity; 
-uniform vec3 sdf_center;           
+uniform vec3 sdf_angular_velocity; // 角速度
+uniform vec3 sdf_center;           // オブジェクトの回転中心（重心）座標
 
 void main() {
 	ivec3 coords = ivec3(gl_GlobalInvocationID.xyz);
+	ivec3 size = ivec3(u_gridSize);
 
-	// 1. 最速の範囲外チェック (uintキャストによるオーバーフロー判定)
-	if (uint(coords.x) >= uint(u_gridSize) || 
-	    uint(coords.y) >= uint(u_gridSize) || 
-	    uint(coords.z) >= uint(u_gridSize)) {
-		return;
-	}
+	// 範囲外アクセス防止 (格子サイズが 8 の倍数でない場合の端数スレッド)
+    if (coords.x >= size.x || coords.y >= size.y || coords.z >= size.z) return;
 
-	// 2. 1次元インデックスの計算
-	uint g_idx = uint(coords.x) + uint(u_gridSize) * (uint(coords.y) + uint(u_gridSize) * uint(coords.z));
-
-	// 3. グリッドデータ読み込み (imageLoadから配列アクセスに変更)
-	float m = uintBitsToFloat(grid[g_idx].m);
-	if (m <= 1e-7) return;	// 質量がほぼゼロなら処理スキップ
+	// 1. グリッドデータ読み込み
+	float m = uintToFloat(grid[gridIndex(coords)].m);
+	// 正の小質量も更新する。絶対閾値で除外するとG2Pの重み和が欠け、
+	// 定数速度場に人工的な速度勾配が生じる（工程2、B-1/A-2）。
+	if (m <= 0.0) return;
 
 	vec3 v = vec3(
-        uintBitsToFloat(grid[g_idx].x),
-        uintBitsToFloat(grid[g_idx].y),
-        uintBitsToFloat(grid[g_idx].z)
+        uintToFloat(grid[gridIndex(coords)].x),
+        uintToFloat(grid[gridIndex(coords)].y),
+        uintToFloat(grid[gridIndex(coords)].z)
     );
 
-	// 4. 速度算出と外力(重力含む)の適用
-	v /= m;
-	v += gravity * timestep;
+	// 2. 速度算出と外力(重力含む)の適用
+	v /= m;						// 運動量を質量で割る
+	v += gravity * timestep;	// 重力を適用
 
-	// 5. 境界条件・当たり判定 (物理計算は既存実装を完全に維持)
-	vec3 pos = (vec3(coords) + vec3(0.5)) * dx;
-	float dist = dot(pos, f_normal) - f_height;
+	// 3. 境界条件・当たり判定
+	// P2G / G2Pと同じ節点位置 i·dx で床とSDFを判定する。
+	vec3 pos = vec3(coords) * dx;	// 現在のセルの世界座標の計算
 
+	float dist = dot(pos, f_normal) - f_height;	// 床との判定・グリッドでの判定なので、ノードが床を貫通しているのかを見ている
+
+	// 床より下なら
 	if (dist < 0.0) {
-		float v_normal = dot(v, f_normal);
+		float v_normal = dot(v, f_normal); // 法線方向の成分を取得
+
+		// 下向きに落下してるなら (床から離れる向きの速度は拘束しない = separating 境界)
 		if (v_normal < 0.0) {
-			vec3 vn = f_normal * v_normal;
-			vec3 vt = v - vn;
+			vec3 vn = f_normal * v_normal;	// 法線方向の速度
+			vec3 vt = v - vn;				// 接線方向の速度
+
+			// 摩擦 (Coulomb): 法線方向に止めた速度 |v_n| に比例して接線速度を減らし、
+			// 減らしきれる場合は 0 にする (静止摩擦)
 			float vt_len = length(vt);
 			if(vt_len > 1e-7){
 				float friction_factor = max(0.0, 1.0 - f_friction * abs(v_normal) / vt_len);
 				vt *= friction_factor;
 			}
-			v = vt - f_restitution * vn;
+
+			// 速度の更新
+			// 侵入法線速度を0にする非弾性境界。f_restitutionは使用しない。
+			v = vt;
 		}
 	}
 
+	// 両端の各3節点を拘束する。上端は size-3 を含める。
+	// 高速移動の全条件で粒子支持域を保証するものではない（B-5、対応台帳参照）。
+	int bound = 3;
+	if (coords.x < bound && v.x < 0.0) v.x = 0.0;
+	if (coords.x >= size.x - bound && v.x > 0.0) v.x = 0.0;
+	if (coords.y < bound && v.y < 0.0) v.y = 0.0;
+	if (coords.y >= size.y - bound && v.y > 0.0) v.y = 0.0;
+	if (coords.z < bound && v.z < 0.0) v.z = 0.0;
+	if (coords.z >= size.z - bound && v.z > 0.0) v.z = 0.0;
+
+
+	//
+	// 動的物体やその他当たり判定を行うならここ
+	// 摩擦の部分は使いまわせるかもなので、必要ならヘルパー関数にする
+	// SDF を使うなら、こちらでも dist を作成して判定できるハズ
+	//
+
 	// SDF を追加するための判定ロジック部分
+	// 1. 現在のグリッドノードのワールド座標を計算
+	// ※ 追加分
+
+	// 2. ワールド座標 -> SDFローカル座標への逆変換 (障害物の平行移動・回転・拡大を打ち消す)
 	vec4 pos_local_vec4 = sdf_inv_model * vec4(pos, 1.0);
 	vec3 pos_local = pos_local_vec4.xyz;
 
+	// 3. ローカル座標がAABBの中に入っているかチェック（最適化：外なら計算しない）
 	if (all(greaterThanEqual(pos_local, sdf_aabb_min)) && all(lessThanEqual(pos_local, sdf_aabb_max))) {
-		vec3 uvw = (pos_local - sdf_aabb_min) / (sdf_aabb_max - sdf_aabb_min);
+
+		// 4. ローカル座標 -> テクスチャUVW座標 (0.0 ~ 1.0) へのマッピング
+		// SDF生成格子点sdfMin+idx*幅/(res-1)をテクセル中心(idx+0.5)/resへ対応させる。
+		// B-6cの合成平面試験で確認。実メッシュ・境界近傍の精度は対応台帳を参照。
+		vec3 sdf_extent = sdf_aabb_max - sdf_aabb_min;
+        vec3 texSize3D = vec3(textureSize(sdf_tex, 0));
+        vec3 uvw = (pos_local - sdf_aabb_min) / sdf_extent * (texSize3D - 1.0) / texSize3D + 0.5 / texSize3D;
+
+		// 5. 距離のサンプリング
 		float dist_local = texture(sdf_tex, uvw).r;
-		float dist_world = dist_local * length(vec3(sdf_model[0]));
-    
-		if (dist_world < p_radius) {
-			vec3 texSize = vec3(textureSize(sdf_tex, 0));
-			vec3 texel = 1.0 / texSize;						
+		float dist_world = 0.0; // Set after evaluating the local normal.
+
+		// 6. 衝突判定 (距離が粒子半径より小さければ接触しているとみなす)
+		{
+
+			// --- 法線(Normal)の計算 (中央差分) ---
+			// テクスチャの1ピクセル分くらいずらしてサンプリングし、勾配を求める
+			vec3 texSize = vec3(textureSize(sdf_tex, 0));	// テクスチャ解像度
+			vec3 texel = 1.0 / texSize;
 			vec3 epsX = vec3(texel.x, 0.0, 0.0);
 			vec3 epsY = vec3(0.0, texel.y, 0.0);
 			vec3 epsZ = vec3(0.0, 0.0, texel.z);
-        
+
 			float nx = (texture(sdf_tex, uvw + epsX).r - texture(sdf_tex, uvw - epsX).r) / (2.0 * texel.x);
 			float ny = (texture(sdf_tex, uvw + epsY).r - texture(sdf_tex, uvw - epsY).r) / (2.0 * texel.y);
 			float nz = (texture(sdf_tex, uvw + epsZ).r - texture(sdf_tex, uvw - epsZ).r) / (2.0 * texel.z);
-        
-			vec3 normal_local = normalize(vec3(nx, ny, nz));
-			vec3 normal_world = normalize(mat3(transpose(sdf_inv_model)) * normal_local);
-        
+
+			// ローカル空間での法線
+			// uvw微分をローカル座標の微分へ変換する（B-6b、対応台帳参照）。
+			// Invert both the AABB and texel-center coordinate scales.
+			// The resolution factor cancels only when all three resolutions match.
+			vec3 gradient_local = vec3(nx, ny, nz) / sdf_extent * (texSize3D - 1.0) / texSize3D;
+			vec3 normal_local = gradient_local / max(length(gradient_local), 1e-8);
+
+			// 7. 逆転置行列でローカル法線をワールド法線へ変換する。
+			vec3 gradient_world = mat3(transpose(sdf_inv_model)) * normal_local;
+			float gradient_length = length(gradient_world);
+			vec3 normal_world = gradient_world / max(gradient_length, 1e-8);
+			// B-6a: exact for planes, local distance approximation for curved SDFs.
+			dist_world = dist_local / max(gradient_length, 1e-8);
+
+			// 8. 衝突解決 (相対速度の押し出し)
+			//   剛体上の点の速度 v_point = v_trans + ω × r を基準にした相対速度で、
+			//   床と同じ「侵入成分を止めて Coulomb 摩擦を適用する」処理を行う。
+			//   (ペナルティ力ではなく、速度を直接拘束する方式)
 			vec3 r = pos - sdf_center;
+
+			// v_point = v_trans + ω × r
 			vec3 point_velocity = sdf_velocity + cross(sdf_angular_velocity, r);
+
+			// grid_vel は現在のグリッドの速度(vec3)とします
 			vec3 rel_vel = v - point_velocity;
 			float vn = dot(rel_vel, normal_world);
 
-			if (dist_world < p_radius && vn < 0.0) {
+			// 接触 + めり込み条件
+			// A zero/invalid gradient has no defined contact normal: skip the SDF response.
+			if (length(gradient_local) > 1e-8 && gradient_length > 1e-8 && !isnan(gradient_length) && !isinf(gradient_length)
+				&& dist_world < p_radius && vn < 0.0) {
+
 				vec3 vt = rel_vel - vn * normal_world;
 				float vt_len = length(vt);
+
 				float mu = f_friction;
+
+				// 法線方向は止める
 				vec3 new_rel_vel = vt;
 
+				// 摩擦
 				if (vt_len > 1e-6) {
 					float max_friction = -mu * vn;
+
 					if (vt_len < max_friction) {
 						new_rel_vel = vec3(0.0);
 					} else {
 						new_rel_vel = vt * (1.0 - max_friction / vt_len);
 					}
 				}
+
 				v = point_velocity + new_rel_vel;
 			}
 		}
 	}
 
-	// 6. 更新されたデータを戻す (imageStoreから配列アクセスに変更)
-	// 質量は更新されていないので書き込み不要
-	grid[g_idx].x = floatBitsToUint(v.x * m);
-	grid[g_idx].y = floatBitsToUint(v.y * m);
-	grid[g_idx].z = floatBitsToUint(v.z * m);
+	// 4. 更新されたデータを戻す
+	//   G2P は「運動量 / 質量」で速度を読むので、速度に質量を掛けて運動量の形で書き戻す
+	// 質量は更新されていないので不要
+	grid[gridIndex(coords)].x = floatToUint(v.x * m);
+    grid[gridIndex(coords)].y = floatToUint(v.y * m);
+    grid[gridIndex(coords)].z = floatToUint(v.z * m);
 }

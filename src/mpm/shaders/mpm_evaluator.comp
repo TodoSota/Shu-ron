@@ -15,20 +15,7 @@
 layout(local_size_x = 64) in;
 
 // 粒子のデータ構造
-struct mpmParticle {
-	vec4 position;		// 位置
-	vec4 velocity;		// 速度 + padding
-	mat4 affineC;		//アフィン速度行列 (mat3 分のみ値あり)
-	mat4 deformation;	// 変形勾配 (mat3 分のみ値あり)
-
-	// 砂の塑性変形パラメーター
-    float alpha;		//降伏面の大きさ
-    float q;			//硬化状態
-    float vc;			//変化の際の体積変化
-    int state;			//状態(変化)
-    int scale;			//スケール
-    int padding[3];		//調整
-};
+#include "common/particle.glsl"
 
 // 読み取り専用の粒子バッファ
 layout(std430, binding = 0) readonly buffer ParticleIn {

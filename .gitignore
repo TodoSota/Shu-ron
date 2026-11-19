@@ -401,5 +401,7 @@ FodyWeavers.xsd
 *.sln.iml
 
 # Custom settings
+/artifacts/baselines/
 *.csv
 .obsidian
+/artifacts/diagnostics/
