@@ -18,6 +18,7 @@
 class Window;
 struct Camera;
 class SdfInstance;
+struct MpmPhysics;
 
 // スイングの状態
 enum class SwingState {
@@ -40,6 +41,9 @@ private:
 
     // --- 入力状態 ---
     int lastMouseState{ GLFW_RELEASE };
+    bool shootActive = false;
+    bool shootFloorEnabled = false;
+    bool shootBoundaryContact = false;
 
     // --- スイングモード用パラメータ ---
     SwingState swingState{ SwingState::None };
@@ -79,26 +83,31 @@ private:
     /// @param[in] window 画面の主体。マウスの状態、クリック位置などを保持
     /// @param[in] camera view や projection などの行列を保持
     /// @param[in] obstacle 動きの主体となるオブジェクトのデータ
-    /// @param[in] dt シミュレーション内の 1 ステップの長さ
-    void handleSwingMode(Window& window, const Camera& camera, SdfInstance& obstacle, float dt);
+    void handleSwingMode(Window& window, const Camera& camera, SdfInstance& obstacle);
+
+    void advanceSwing(SdfInstance& obstacle, float dt);
 
 public:
     InteractionController() = default;
     ~InteractionController() = default;
 
     // 毎フレーム呼ばれる更新処理
-    void update(Window& window, const Camera& camera, SdfInstance& obstacle, float dt);
+    void update(Window& window, const Camera& camera, SdfInstance& obstacle, float dt,
+        const MpmPhysics& physics, float worldScale);
+
+    void cancelDrag() { if (isDragging()) swingState = SwingState::None; }
+    void resetMotion() { swingState = SwingState::None; shootActive = false; shootFloorEnabled = false; shootBoundaryContact = false; }
+    void syncMouse(Window& window);
 
     // ImGuiと連携するためのモードGetter/Setter
     int getMode() const { return currentMode; }
-    void setMode(int mode) { currentMode = mode; }
+    void setMode(int mode) { if (mode != currentMode) cancelDrag(); currentMode = mode; }
 
     // スイング中（ドラッグ中）かどうか
     bool isDragging() const { return swingState == SwingState::Dragging; }
 
     /// Renderer に渡すプレビュー用の頂点データを生成(計算)して返す
-    /// @param[in] obstacle スイングの主体となる物体のデータ
-    std::vector<glm::vec3> calcPreviewPoints(const SdfInstance& obstacle) const;
+    std::vector<glm::vec3> calcPreviewPoints() const;
 
     /// 最後に実行したアクションを再発火
     /// @param[in] obstacle パラメータを適用するSDFオブジェクト

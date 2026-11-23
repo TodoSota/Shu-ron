@@ -4,15 +4,16 @@
 // mpm_evaluator.comp : シミュレーション状態の評価 (実験・論文用の計測)
 // 目的: 全粒子を走査して、次の統計量を GPU 上で集計する。
 //   ・位置・速度の NaN / Inf の数 (数値破綻の検出)
-//   ・領域外 (|x| > 10) に飛び出した粒子数
+//   ・物理領域 [0, worldScale]³ の外 に飛び出した粒子数
 //   ・正常な粒子の数、最大速度、粒子群の AABB (堆積形状の広がり)
 // 集計は atomic 演算で行う。float の最大値は、正の float のビット列が uint として
-// 大小順に並ぶ性質を使って atomicMax(uint) で求め、AABB は固定小数点
-// (×SCALE) の int に変換して atomicMin / atomicMax で求めている。
+// 大小順に並ぶ性質を使い、最大速度とAABBを求める。
 // 結果は MpmEvaluator が glGetBufferSubData で読み戻して CSV に出力する。
 //==============================================================================
 
 layout(local_size_x = 64) in;
+uniform float worldScale;
+uniform uint particleCount;
 
 // 粒子のデータ構造
 #include "common/particle.glsl"
@@ -30,21 +31,16 @@ layout(std430, binding = 1) buffer EvalResult {
     uint oobCount;                // oob : Out of Bounds
     uint maxVelocityBits_GPU;     // GPU 内での速度表現
 
-    // AABB用（スケール済み） : 固定小数点スケール
-    int minPosX, minPosY, minPosZ;
-    int maxPosX, maxPosY, maxPosZ;
+    // AABB用（非負floatのビット表現）
+    uint minPosX, minPosY, minPosZ;
+    uint maxPosX, maxPosY, maxPosZ;
 
     uint padding[3];
 } result;
 
-// AABB を int の atomic で求めるための固定小数点の倍率 (分解能 0.01)
-const float SCALE = 100.0;
-const int INIT_MAX = 2147483647;  // intの最大値
-const int INIT_MIN = -2147483647; // intの最小値
-
 void main() {
     uint idx = gl_GlobalInvocationID.x;
-    if (idx >= particles.length()) return;
+    if (idx >= particleCount) return;
 
     vec3 pos = particles[idx].position.xyz;
     vec3 vel = particles[idx].velocity.xyz;
@@ -58,8 +54,8 @@ void main() {
     if (posInvalid) atomicAdd(result.nanPositionCount, 1);
     if (velInvalid) atomicAdd(result.nanVelocityCount, 1);
 
-    // シミュレーション空間（0.0 ~ 1.5 等）に合わせた緩い境界チェック
-    bool isOob = (pos.x < -10.0 || pos.x > 10.0 || pos.y < -10.0 || pos.y > 10.0 || pos.z < -10.0 || pos.z > 10.0);
+    bool isOob = !posInvalid && (any(lessThan(pos, vec3(0.0))) ||
+        any(greaterThan(pos, vec3(worldScale))));
     if (isOob) atomicAdd(result.oobCount, 1);
 
     // 正常な粒子のみで統計を計算
@@ -67,15 +63,16 @@ void main() {
         atomicAdd(result.validParticleCount, 1);
         atomicMax(result.maxVelocityBits_GPU, floatBitsToUint(velNorm));
 
-        ivec3 scaledPos = ivec3(pos * SCALE);
+        // absで -0.0 を +0.0 に揃える。
+        uvec3 posBits = floatBitsToUint(abs(pos));
 
         // AABBの計算
-        atomicMin(result.minPosX, scaledPos.x);
-        atomicMin(result.minPosY, scaledPos.y);
-        atomicMin(result.minPosZ, scaledPos.z);
+        atomicMin(result.minPosX, posBits.x);
+        atomicMin(result.minPosY, posBits.y);
+        atomicMin(result.minPosZ, posBits.z);
 
-        atomicMax(result.maxPosX, scaledPos.x);
-        atomicMax(result.maxPosY, scaledPos.y);
-        atomicMax(result.maxPosZ, scaledPos.z);
+        atomicMax(result.maxPosX, posBits.x);
+        atomicMax(result.maxPosY, posBits.y);
+        atomicMax(result.maxPosZ, posBits.z);
     }
 }

@@ -1,7 +1,6 @@
 //==============================================================================
 // main.cpp : 初期化、方式選択とメインループ
-// 入力を受け、物理サブステップ、履歴記録、描画とUIを進める。
-// 物理パラメータを設定し、シミュレーター経由で物理UBOを更新する。
+// 入力・描画・UIを処理し、物理更新と履歴の制御をSimulationRunへ渡す。
 //==============================================================================
 // Windowsの OpenGL ライブラリをリンクする
 #pragma comment(lib, "opengl32.lib")
@@ -10,16 +9,15 @@
 #include "core/Camera.h"		// 3D空間におけるカメラ位置
 #include "core/Errorcheck.h"	// OpenGL のエラーチェック
 #include "core/MeshResource.h"	// SDFに存在するオブジェクトのデータ
-#include "sdf/SdfInstance.h"	// SDFに登録するオブジェクト
+#include "sdf/SDFInstance.h"	// SDFに登録するオブジェクト
 #include "controller/InteractionController.h" // プレイヤー操作の処理
 #include "render/Renderer.h"
 
 // --- MPM シミュレーションに関するインクルード
+#include "SimulationRun.h"
 #include "mpm/TimelineManager.h"// MPM シミュレーションの履歴
 #include "mpm/IMpmObject.h"		// MPM 用の描画データパッケージ
 #include "mpm/IMpmSimulator.h"	// MPM のシミュレーション実行クラス
-#include "mpm/3dtexture/MpmSimulator3DTEX.h" // テクスチャ版の実装
-#include "mpm/ssbo/MpmSimulatorSSBO.h"     // SSBO版の実装
 
 // オブジェクトロード・ライブラリ
 #define TINYOBJLOADER_IMPLEMENTATION // 必ずインクルードの前に書く
@@ -30,77 +28,16 @@
 #include <random>
 #include <memory>
 #include <cmath>
+#include <algorithm>
+#include <limits>
 
 // GLM関連
 #include <GLM/gtc/type_ptr.hpp>
 #include <GLM/gtc/matrix_transform.hpp>
 
-// 粒子数
-int currentParticleCount{ 10000 };
-// グリッドの解像度
-int currentGrid = 128;
-// 粒子の基準数
-const int baseParticleCount = 10000;
-// シミュレーション範囲への縮尺
-//   シミュレーション領域は [0, kWorldScale]³ (m)。格子間隔 dx = kWorldScale / currentGrid
-const float kWorldScale = 1.5f;
-// 巻き戻し可能フレーム数
-//   履歴フレーム数の上限。実際の容量はTimelineManagerが予算とGPU上限から決める。
-const int maxFrames = 600;
-
-// シミュレーション範囲から逆算した適切な粒子体積
-// 初期立方体(一辺0.3m)を基準粒子数で割った1粒子あたりの絶対体積
-const float kBaseParticleVolume = pow(kWorldScale * 0.2f, 3.0f) / static_cast<float>(baseParticleCount);
-
-// 粒子 1 個が占める立方体の一辺 (V_init / N)^(1/3) [m] (描画半径の基準)
-//   IMpmSimulator::resetParticles は、一辺 0.2 × kWorldScale × particleScale の立方体に粒子を置く
-float particleSpacing(float particleScale, int particleCount) {
-	return kWorldScale * 0.2f * particleScale / std::cbrt(static_cast<float>(particleCount));
-}
-
-// mpmSimParam の再設定
-//   目的: 再起動時にdx、1/dx、接触半径を再計算し、基準体積・質量を再設定する。
-//   立方体配置の粒子体積は基準立方体の体積を基準粒子数で割った値。質量は体積×400 kg/m³。
-//   接触半径は起動・再設定ともdx/2。描画半径はparticleSpacing等から別に設定する。
-MpmPhysics resetMpmSimParam(MpmPhysics mpmSimParam, int currentGrid) {
-	const float currentGridSpacing = kWorldScale / static_cast<float>(currentGrid);	// グリッドの間隔
-	const float invGridSpacing = 1.0f / currentGridSpacing;
-
-	const float particleRadius = currentGridSpacing * 0.5f;
-	const float particleVolume = kBaseParticleVolume;
-	const float particleMass = particleVolume * 400.0f; // 密度 400.0f
-
-	mpmSimParam.dx = currentGridSpacing;
-	mpmSimParam.inv_dx = invGridSpacing;
-	mpmSimParam.p_vol = particleVolume;
-	mpmSimParam.p_mass = particleMass;
-	mpmSimParam.p_radius = particleRadius;
-	mpmSimParam.p_overlap = particleRadius * 0.01f;
-
-	return mpmSimParam;
-}
-
-/// シミュレーターを生成する関数
-/// @note 1 : SSBO, それ以外 : 3Dテクスチャ版 が生成されるようになっている
-/// @param [in] simMode シミュレーションの種類を指定する数
-/// @param [in] particleCount 粒子数
-/// @param [in] gridSize グリッドの分割数
-/// @param [in] worldScale シミュレーション領域の縮尺
-/// @param [in] useLinear 線形補間の方式を使用するか
-std::unique_ptr<IMpmSimulator> createSimulator(int simMode, int particleCount, int gridSize, float worldScale, bool useLinear) {
-	if (simMode == 1) {
-		std::cout << "Creating Simulator: SSBO mode" << std::endl;
-		return std::make_unique<MpmSimulatorSSBO>(particleCount, gridSize, worldScale, useLinear);
-	}
-	else {
-		std::cout << "Creating Simulator: 3D Texture mode" << std::endl;
-		return std::make_unique<MpmSimulator3DTEX>(particleCount, gridSize, worldScale, useLinear);
-	}
-}
-
 /// メインプログラム
 /// @return プログラムが正常終了した場合 0
-auto main() -> int {
+auto main() -> int try {
 	//--------------------------------------------------------------------------
 	// 1. ウィンドウ・OpenGL・ImGui の初期化
 	//--------------------------------------------------------------------------
@@ -116,6 +53,8 @@ auto main() -> int {
 	// プログラム終了時の処理を登録
 	atexit(glfwTerminate);
 
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	// ウィンドウを作成
 	Window window(1280, 720, "MPM Simulator");
 
@@ -141,16 +80,27 @@ auto main() -> int {
 		return EXIT_FAILURE;
 	}
 
+	if (!GLEW_VERSION_4_3) throw std::runtime_error("OpenGL 4.3 is required.");
+	std::cout << "OpenGL: " << glGetString(GL_VERSION) << " / " << glGetString(GL_RENDERER) << '\n';
+
 #if defined(IMGUI_VERSION)
 	// ImGui のバージョンをチェックする
 	IMGUI_CHECKVERSION();
 
 	// ImGui のコンテキストを作成する
 	ImGui::CreateContext();
-
-	// ImGui のバックエンドに OpenGL / GLFW を使う
-	ImGui_ImplGlfw_InitForOpenGL(window.get(), true);
-	ImGui_ImplOpenGL3_Init();
+	struct ImGuiSession {
+		bool glfwReady = false;
+		bool glReady = false;
+		~ImGuiSession() {
+			if (glReady) ImGui_ImplOpenGL3_Shutdown();
+			if (glfwReady) ImGui_ImplGlfw_Shutdown();
+			ImGui::DestroyContext();
+		}
+	} imguiSession;
+	imguiSession.glfwReady = ImGui_ImplGlfw_InitForOpenGL(window.get(), true);
+	if (imguiSession.glfwReady) imguiSession.glReady = ImGui_ImplOpenGL3_Init();
+	if (!imguiSession.glReady) throw std::runtime_error("Cannot initialize ImGui backends.");
 
 	// ImGui のスタイルを設定する
 	auto& io{ ImGui::GetIO() };
@@ -196,48 +146,8 @@ auto main() -> int {
 	obstacle.scale = glm::vec3(0.2f);
 	obstacle.updateMatrices();
 
-	//--------------------------------------------------------------------------
-	// 3. 材料定数とシミュレーションのパラメータ
-	//   E, ν からラメ定数 μ = E / 2(1+ν), λ = Eν / (1+ν)(1-2ν) を求める。
-	//   コメントアウトされている E = 3.537e5 は Klár et al. 2016 の砂の値
-	//   (同論文の密度は 2200 kg/m³)。
-	//   時間刻みは工程2の基準条件でΔt=2.5e-4 sを採用。弾性波のCFL条件
-	//     Δt ≲ C·dx / sqrt((λ + 2μ)/ρ)   (C ≈ 0.3〜0.5)
-	//   を E = 5e4, ν = 0.3, ρ = 400, dx = 1.5/128 で見積もると約 2.7e-4 s になり、
-	//   旧dt=1e-3 sは刻み比較のAABB基準を超えた。材料・速度・格子変更時の自動dt調整はない。
-	//   [点検 B-1] 基準条件以外の安定性は未保証。docs/maintenance/stage2-validation.mdを参照。
-	//--------------------------------------------------------------------------
-	// 各種材料の特性値とシミュレーションの設定
-	//const float E = 3.537e5f;	// ヤング率
-	const float E = 5e4f;	// ヤング率
-	const float Nu = 0.3f;	// ポアソン比
-	const float currentGridSpacing = kWorldScale / (float)currentGrid;	// グリッドの間隔
-
-	// 空間における設定
-	MpmPhysics mpmSimParam{
-		{0.0f, -9.8f, 0.0f},// 重力
-		1.0f / 4000.0f,		// 時間間隔（工程2の基準dt=0.00025秒）
-		{0.0f, 1.0f, 0.0f},	// 地面の法線
-		0.1f,				// 地面の高さ
-		0.5f,				// 地面の反発係数
-		0.6f,				// 地面の摩擦係数
-		currentGridSpacing,		// グリッドの間隔
-		1.0f / currentGridSpacing,// 間隔の逆数
-
-		// 粒子
-		0.2f,											// 粒子の反発係数
-		kBaseParticleVolume,					// 粒子の体積
-		E / (2.0f * (1.0f + Nu)),						// 粒子のラメ係数
-		E * Nu / ((1.0f + Nu) * (1.0f - 2.0f * Nu)),	// 粒子のラメ係数
-		kBaseParticleVolume * 400.0f,// 粒子の質量
-		currentGridSpacing * 0.5f,											// 粒子の半径
-		currentGridSpacing * 0.005f,										// 予約スロット（旧p_overlap）
-		0,												// 調整
-
-		// 障害物
-		{0.5f, 0.1f, 0.5f, 0.1f},
-		{0.0f, 0.0f, 0.0f, 0.0f}
-	};
+	SimulationSettings settings;
+	auto mpmSimParam = defaultSimulationPhysics(settings.grid);
 
 	//--------------------------------------------------------------------------
 	// 4. 描画状態の初期設定
@@ -253,56 +163,36 @@ auto main() -> int {
 	glCullFace(GL_BACK); // 裏面は描画しない
 
 	glPointSize(static_cast<GLfloat>(window.getSize().y * 0.01));
-	glEnable(GL_POINT_SMOOTH);
+	GLint profileMask = 0;
+	glGetIntegerv(GL_CONTEXT_PROFILE_MASK, &profileMask);
+	if ((profileMask & GL_CONTEXT_COMPATIBILITY_PROFILE_BIT) != 0) glEnable(GL_POINT_SMOOTH);
 
 	//--------------------------------------------------------------------------
 	// 5. シミュレーション関連オブジェクトの生成
 	//--------------------------------------------------------------------------
 	// 起動時にコンソールから シミュレーション種類 and 補間方式を選択させる
-	int simModeInput = 0;
 	std::cout << "Select MPM Memory Mode:\n  0: 3D Texture (Base)\n  1: SSBO (Test)\n> ";
-	std::cin >> simModeInput;
+	if (!(std::cin >> settings.mode)) throw std::runtime_error("Invalid memory mode input.");
 
-	int interpInput = 1;
 	std::cout << "Select MPM Interpolation Method:\n";
 	std::cout << "  0: Quadratic B-Spline\n" << "  1: Linear\n";
 	std::cout << "> ";
-	std::cin >> interpInput;
-	bool useLinear = (interpInput != 0);
-
-	// シミュレーション処理クラスのインスタンス生成
-	std::unique_ptr<IMpmSimulator> mpmSimulator = createSimulator(simModeInput, currentParticleCount, currentGrid, kWorldScale, useLinear);
-
-	// 粒子の生成
-	//   粒子数に比例して初期立方体の体積を変え (1 辺は粒子数の立方根に比例)、粒子の配置密度を一定に保つ
-	float particleScale = std::cbrt(static_cast<float>(currentParticleCount) / static_cast<float>(baseParticleCount));
-	mpmSimulator->resetParticles(particleScale, false);
-	mpmSimulator->setPhysics(mpmSimParam);
-	// タイムラインマネージャーのインスタンス生成
-	auto timeline = std::make_unique< TimelineManager>(maxFrames, currentParticleCount, 1);
+	if (!(std::cin >> settings.interpolation)) throw std::runtime_error("Invalid interpolation input.");
+	auto resources = prepareSimulation(settings, mpmSimParam);
+	auto& mpmSimulator = resources.simulator;
+	auto& timeline = resources.timeline;
 	// 画面描画クラスのインスタンス生成
 	Renderer renderer(kWorldScale);
-	renderer.settings.particleSpacing = particleSpacing(particleScale, currentParticleCount);
+	renderer.settings.particleSpacing = particleSpacing(settings);
 	// プレイヤー操作処理のインスタンス生成
 	InteractionController controller;
 	// 描画空間におけるカメラ生成
 	Camera camera;
 
-	// タイムライン制御用のフラグ
-	bool isPaused{ true };
-	bool stepFrame{ false };
+	SimulationRun run(resources, settings, mpmSimParam, window, controller, obstacle, renderer);
+	auto pendingSettings = settings;
+	std::string restartError;
 
-	// サブステップ
-	//   同じdtで行う1描画フレームあたりの物理ステップ数。既定dt=.25ms。増やしても1ステップのdtは小さくならない。
-	int subSteps = 1;
-
-	// 描画用フレームカウンター
-	int renderFrame = 0;
-
-	//--------------------------------------------------------------------------
-	// 6. メインループ
-	//--------------------------------------------------------------------------
-	// ウィンドウ起動中
 	while (window) {
 		// 更新処理を行う
 		window.update();
@@ -323,52 +213,9 @@ auto main() -> int {
 		glm::mat4 view = camera.getView();// ビュー変換行列を設定・カメラの現在位置を取得
 		glm::mat4 projection = camera.getProjection(window.getAspect());// 投影変換行列を設定
 
-		// --- 物理の更新 (再生中、またはコマ送りが要求されたときだけ) ---
-		// ポーズかコマ送りの場合タイムステップを停止
-		float currentDt = (isPaused && !stepFrame) ? 0.0f : mpmSimParam.timestep;
-
-		if (!mpmSimulator->getSimulationError().empty()) { isPaused = true; stepFrame = false; }
-		if (!isPaused || stepFrame) {
-			int completedSubSteps = 0;
-			// サブステップ
-			for (int i = 0; i < subSteps; i++) {
-				const auto previousObstacle = obstacle.captureSnapshot();
-				const auto previousController = controller;
-				// 入力とカメラ更新
-				controller.update(window, camera, obstacle, currentDt);
-
-				// SDF(障害物) の更新 (速度・角速度による剛体の運動学的な移動。砂から受ける力は考慮しない)
-				obstacle.update(currentDt);
-
-				// 値の共有と物理計算の進行
-				mpmSimulator->setPhysics(mpmSimParam);
-				mpmSimulator->step(obstacle);		// *** 計算の主体 ***
-				if (!mpmSimulator->getSimulationError().empty()) {
-					obstacle.restoreSnapshot(previousObstacle);
-					controller = previousController;
-					isPaused = true;
-					break;
-				}
-				++completedSubSteps;
-			}
-			// 粉塵を、このフレームで進めたシミュレーション時間だけ進める
-			renderer.updateDust(mpmSimulator->getMpmObject(), mpmSimParam, mpmSimParam.timestep * completedSubSteps);
-			// コマ送り要求完了のためリセット
-			stepFrame = false;
-			if (completedSubSteps > 0) {
-			// シミュレーション状況をタイムラインへ記録 (サブステップごとではなく、描画 1 フレームに 1 回)
-			timeline->recordFrame(mpmSimulator->getMpmObject().getReadVbo(), &obstacle);
-			// シミュレーションの FPS 状況を評価クラスへ送信
-			float currentFramerate = ImGui::GetIO().Framerate;
-			mpmSimulator->getEvaluator().recordAppFps(renderFrame, currentFramerate, 1000.0f / currentFramerate);
-			renderFrame++;
-			if (currentFramerate < 1) isPaused = true;
-			}
-		}
-		else {
-			// 一時停止中もプレビューなどは更新する
-			if (mpmSimulator->getSimulationError().empty()) controller.update(window, camera, obstacle, currentDt);
-		}
+		run.advance(camera);
+		const float currentFramerate = ImGui::GetIO().Framerate;
+		run.recordFps(currentFramerate);
 
 		// --- 描画 ---
 		// 画面の描画
@@ -389,7 +236,7 @@ auto main() -> int {
 		// Swing モードのプレビュー描画
 		if (controller.isDragging()) {
 			// Renderer にデータを渡して描画させる
-			renderer.drawPreview(view, projection, model, controller.calcPreviewPoints(obstacle));
+			renderer.drawPreview(view, projection, model, controller.calcPreviewPoints());
 		}
 
 		// OpenGL 周りのエラーがないかチェック
@@ -420,7 +267,9 @@ auto main() -> int {
 		ImGui::EndDisabled();
 		ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.0f, 1.0f), "[ State Evaluation ]");
 		if (ImGui::Checkbox("Evaluation Compute", &evalOptions.enableStateEvaluation)) optionsChanged = true;
+		ImGui::BeginDisabled(!evalOptions.enableStateEvaluation);
 		if (ImGui::Checkbox("State Readback (Sync)", &evalOptions.enableStateReadback)) optionsChanged = true;
+		ImGui::EndDisabled();
 		if (ImGui::Checkbox("Rep Particle Readback (Sync)", &evalOptions.enableRepParticleReadback)) optionsChanged = true;
 
 		if (ImGui::SliderInt("Eval Interval", &evalOptions.stateEvaluationInterval, 1, 100)) optionsChanged = true;
@@ -444,18 +293,24 @@ auto main() -> int {
 		static char note[64] = "baseline";
 		ImGui::InputText("Case / Note", note, IM_ARRAYSIZE(note));
 
+		static std::string logStatus;
 		if (ImGui::Button("Save Logs to CSV")) {
 			// --- ExperimentID のフォーマット (例: 1 -> "E01") ---
 			char expIdStr[16];
 			snprintf(expIdStr, sizeof(expIdStr), "E%02d", expId);
 
 			// --- 補間方式の文字列化 ---
-			std::string simModeStr = (simModeInput == 0) ? "TEX" : "SSBO";
-			std::string interpStr = (interpInput == 0) ? "QuadraticBSpline" : "Linear";
+			std::string simModeStr = (settings.mode == 0) ? "TEX" : "SSBO";
+			std::string interpStr = (settings.interpolation == 0) ? "QuadraticBSpline" : "Linear";
 
 			// --- ベースファイル名の構築 ---
 			// 形式: [ExperimentID]_[Particle]_[Grid]_[Interpolation]_[Case/Note]
-			std::string baseName = std::string(expIdStr) + "_" + simModeStr + "_p" + std::to_string(currentParticleCount) + "_g" + std::to_string(currentGrid) + "_" + interpStr + "_" + std::string(note);
+			std::string safeNote(note);
+			for (auto& ch : safeNote) {
+				if (!(ch >= 'a' && ch <= 'z') && !(ch >= 'A' && ch <= 'Z') &&
+					!(ch >= '0' && ch <= '9') && ch != '-' && ch != '_') ch = '_';
+			}
+			std::string baseName = std::string(expIdStr) + "_" + simModeStr + "_p" + std::to_string(settings.particleCount) + "_g" + std::to_string(settings.grid) + "_" + interpStr + "_" + safeNote;
 
 			// 各種CSVのファイル名を構築
 			std::string perfFile = baseName + "_perf.csv";
@@ -463,16 +318,19 @@ auto main() -> int {
 			std::string fpsFile = baseName + "_fps.csv";
 
 			// 保存処理の実行
-			mpmSimulator->getEvaluator().saveLogToCSV(perfFile, detailFile, fpsFile);
-
-			// 保存が完了したら、次の実験に向けて自動でIDを+1しておく
-			expId++;
+			logStatus = mpmSimulator->getEvaluator().saveLogToCSV(perfFile, detailFile, fpsFile);
+			if (logStatus.empty()) {
+				logStatus = "Saved logs: " + baseName;
+				if (expId < (std::numeric_limits<int>::max)()) ++expId;
+			}
 		}
 		ImGui::SameLine();
 		if (ImGui::Button("Clear Log")) {
 			mpmSimulator->getEvaluator().clearLogs();
+			logStatus.clear();
 		}
 		
+		if (!logStatus.empty()) ImGui::TextWrapped("%s", logStatus.c_str());
 		ImGui::Separator(); // 区切り線
 
 		ImGui::Text("Timeline Control:");
@@ -484,7 +342,10 @@ auto main() -> int {
 		// シミュレーションパラメータの表示と編集
 		ImGui::Text("Physics Parameters:");
 		ImGui::SliderFloat("Floor Height", &mpmSimParam.f_height, -5.0f, 5.0f);
-		ImGui::SliderFloat3("Floor Normal", &mpmSimParam.f_normal[0], 0.0f, 1.0f);
+		auto floorNormal = mpmSimParam.f_normal;
+		if (ImGui::SliderFloat3("Floor Normal", &floorNormal[0], 0.0f, 1.0f) && glm::length(floorNormal) > 1e-6f) {
+			mpmSimParam.f_normal = glm::normalize(floorNormal);
+		}
 
 		ImGui::Separator(); // デバック範囲のため区切り線
 		bool debugFlag = window.getUseDebugColor();
@@ -520,38 +381,39 @@ auto main() -> int {
 		ImGui::Text("Timeline Control:");
 
 		// 再生 / 一時停止のトグルボタン
-		if (ImGui::Button(isPaused ? u8"▶ Play" : u8"■ Pause")) {
-			isPaused = !isPaused;
+		if (ImGui::Button(run.isPaused() ? u8"▶ Play" : u8"■ Pause")) {
+			run.togglePause();
 		}
 		ImGui::SameLine();
 
 		// コマ送りボタン（一時停止中のみ押せるように制御）
-		if (!isPaused) {
+		if (!run.isPaused()) {
 			ImGui::BeginDisabled(); // 稼働中はグレーアウト
 		}
 		ImGui::PushButtonRepeat(true);	// 長押しでリピート可能
 		if (ImGui::Button(u8"▶▶ Step Forward (1 Frame)")) {
-			stepFrame = true;
+			run.requestStep();
 		}
 		ImGui::PopButtonRepeat();		// 長押しリピート設定解除
-		if (!isPaused) {
+		if (!run.isPaused()) {
 			ImGui::EndDisabled();
 		}
 
 		ImGui::Spacing();
 
 		// 再生中はスライダーをグレーアウトして操作不能にする
-		if (!isPaused) {
+		if (!run.isPaused()) {
 			ImGui::BeginDisabled();
 		}
 
 		// 1フレームあたり1〜32ステップの範囲で調整可能
-		ImGui::SliderInt("Sub-steps", &subSteps, 1, 32);
+		int subSteps = run.subStepCount();
+		if (ImGui::SliderInt("Sub-steps", &subSteps, 1, 32)) run.setSubStepCount(subSteps);
 		if (ImGui::IsItemHovered()) {
 			ImGui::SetTooltip("Number of physics calculations per frame (16 is roughly the actual speed)");
 		}
 
-		if (!isPaused) {
+		if (!run.isPaused()) {
 			ImGui::EndDisabled();
 		}
 
@@ -584,63 +446,34 @@ auto main() -> int {
 		else ImGui::Text("Timeline capacity: %d frames", timeline->getCapacity());
 		if (timeline->getCurrentFrameCount() > 0 &&
 			ImGui::SliderInt("Timeline (Frames)", &currentPlaybackFrame, 0, maxFrameIndex)) {
-			// 強制的にPauseにする
-			isPaused = true;
-			timeline->setPlaybackFrame(currentPlaybackFrame);
-
-			// 指定した論理フレームの状態をGPU/CPUに復元
-			//   (読み出し側の粒子バッファだけを上書きする。次の step() はこのバッファから計算を始める)
-			timeline->restoreToFrame(currentPlaybackFrame, mpmSimulator->getMpmObject().getReadVbo(), &obstacle);
-			renderer.clearDust();	// 粉塵の状態は記録していないので、巻き戻したら消す
+			run.seek(currentPlaybackFrame);
 		}
 
 		// リスタート
 		if (ImGui::Button("Restart Simulation")) {
-			particleScale = std::cbrt(static_cast<float>(currentParticleCount) / static_cast<float>(baseParticleCount));
-			mpmSimulator->resetParticles(particleScale, false);
-			renderer.clearDust();
-			mpmSimulator->setPhysics(mpmSimParam);
+			run.restart();
 		}
 
 		// --- 設定変更とリスタート用UI ---
 		ImGui::Separator();
 		ImGui::TextColored(ImVec4(0.2f, 0.8f, 1.0f, 1.0f), "[ Simulation Restart Settings ]");
 
-		// UIで入力するための変数（staticで保持）
-		static int inputSimMode = simModeInput;
-		static int inputParticleCount = currentParticleCount;
-		static int inputGrid = currentGrid;
-		static int inputInterpolation = interpInput;
-
-		ImGui::InputInt("Particle Count", &inputParticleCount);
-		ImGui::InputInt("Grid Size (ex: 32, 64, 128)", &inputGrid);
-		ImGui::InputInt("Interpolation \n(0 : B spline, 1 : Linear)", &inputInterpolation);
+		const char* memoryModes[] = { "3D Texture", "SSBO" };
+		ImGui::Combo("Memory Mode", &pendingSettings.mode, memoryModes, IM_ARRAYSIZE(memoryModes));
+		ImGui::InputInt("Particle Count", &pendingSettings.particleCount);
+		ImGui::InputInt("Grid Size (ex: 32, 64, 128)", &pendingSettings.grid);
+		ImGui::InputInt("Interpolation \n(0 : B spline, 1 : Linear)", &pendingSettings.interpolation);
 
 		if (ImGui::Button("Apply & Restart Simulation")) {
-			// 現在稼働中の変数を更新
-			simModeInput = inputSimMode;
-			currentParticleCount = inputParticleCount;
-			currentGrid = inputGrid;
-			interpInput = inputInterpolation;
-			useLinear = (interpInput != 0);
-
-			// ===== ここで古いインスタンスが破棄され、新しいインスタンスが生成される =====
-			//   粒子数と格子解像度は GPU バッファのサイズを決めるので、変更するときはオブジェクトを作り直す
-			mpmSimulator = createSimulator(simModeInput, currentParticleCount, currentGrid, kWorldScale, useLinear);
-			timeline = std::make_unique<TimelineManager>(maxFrames, currentParticleCount, 1);
-
-			// 粒子の再配置と物理パラメータの再適用
-			particleScale = std::cbrt(static_cast<float>(currentParticleCount) / static_cast<float>(baseParticleCount));
-			mpmSimParam =  resetMpmSimParam(mpmSimParam, currentGrid);
-			mpmSimulator->resetParticles(particleScale, false);
-			renderer.clearDust();
-			renderer.settings.particleSpacing = particleSpacing(particleScale, currentParticleCount);
-			mpmSimulator->setPhysics(mpmSimParam);
-
-			// 一時停止状態などをリセット
-			isPaused = true;
-			stepFrame = false;
+			try {
+				run.rebuild(pendingSettings);
+				restartError.clear();
+			}
+			catch (const std::exception& error) {
+				restartError = error.what();
+			}
 		}
+		if (!restartError.empty()) ImGui::TextWrapped("%s", restartError.c_str());
 
 		ImGui::End();
 #endif
@@ -648,4 +481,8 @@ auto main() -> int {
 		// カラーバッファを入れ替えてイベントを取り出す
 		window.swapBuffers();
 	}
+}
+catch (const std::exception& error) {
+    std::cerr << error.what() << '\n';
+    return EXIT_FAILURE;
 }

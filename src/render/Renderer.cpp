@@ -4,10 +4,10 @@
 #include "Renderer.h"
 
 #include "../core/Camera.h"
-#include "../core/shader.h"
+#include "../core/Shader.h"
 #include "../mpm/IMpmObject.h"
 #include "../mpm/MpmPhysics.h"
-#include "../sdf/SdfInstance.h"
+#include "../sdf/SDFInstance.h"
 
 #include <GLM/gtc/type_ptr.hpp>
 #include <cmath>
@@ -120,6 +120,24 @@ void Renderer::initPreview() {
 }
 
 
+namespace {
+    // 互換プロファイルでは、gl_PointCoord を使うために GL_POINT_SPRITE を有効にする必要がある
+    // (コアプロファイルでは常に有効で、この列挙子自体がない)
+    constexpr GLenum kPointSprite = 0x8861;
+    bool isCompatibilityProfile() {
+        GLint mask = 0;
+        glGetIntegerv(GL_CONTEXT_PROFILE_MASK, &mask);
+        return (mask & GL_CONTEXT_CORE_PROFILE_BIT) == 0;
+    }
+
+    void drawPointSprites(GLsizei count) {
+        const bool compat = isCompatibilityProfile();
+        if (compat) glEnable(kPointSprite);
+        glDrawArrays(GL_POINTS, 0, count);
+        if (compat) glDisable(kPointSprite);
+    }
+}
+
 // --- パブリック描画メソッド ---
 
 // 床の描画
@@ -134,7 +152,7 @@ void Renderer::drawFloor(const glm::mat4& view, const glm::mat4& projection, con
     glUniform1i(glGetUniformLocation(pointProgram, "is_floor"), 1); // 地面フラグON
 
     glBindVertexArray(floorVAO);
-    glDrawArrays(GL_POINTS, 0, floorCount);
+    drawPointSprites(floorCount);
     glBindVertexArray(0);
 }
 
@@ -152,7 +170,7 @@ void Renderer::drawMpm(const IMpmObject& MpmObject, const glm::mat4& view, const
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, MpmObject.getReadVbo());
 
     glBindVertexArray(MpmObject.getRenderVao());
-    glDrawArrays(GL_POINTS, 0, MpmObject.getParticleCount());
+    drawPointSprites(MpmObject.getParticleCount());
     glBindVertexArray(0);
 }
 
@@ -215,14 +233,7 @@ namespace {
     void setFloat(GLuint prog, const char* name, float v) { glUniform1f(glGetUniformLocation(prog, name), v); }
     void setInt(GLuint prog, const char* name, int v) { glUniform1i(glGetUniformLocation(prog, name), v); }
 
-    // 互換プロファイルでは、gl_PointCoord を使うために GL_POINT_SPRITE を有効にする必要がある
-    // (コアプロファイルでは常に有効で、この列挙子自体がない)
-    constexpr GLenum kPointSprite = 0x8861;
-    bool isCompatibilityProfile() {
-        GLint mask = 0;
-        glGetIntegerv(GL_CONTEXT_PROFILE_MASK, &mask);
-        return (mask & GL_CONTEXT_CORE_PROFILE_BIT) == 0;
-    }
+
 }
 
 void Renderer::initDeferred() {
@@ -303,7 +314,7 @@ void Renderer::drawSpheres(const IMpmObject& mpmObject, const glm::mat4& view, c
 
     // 点の大きさをシェーダーで決め、点スプライトを有効にする
     const bool compat = isCompatibilityProfile();
-    const GLboolean smoothWasOn = glIsEnabled(GL_POINT_SMOOTH);
+    const bool smoothWasOn = compat && glIsEnabled(GL_POINT_SMOOTH);
     glEnable(GL_PROGRAM_POINT_SIZE);
     if (compat) { glEnable(kPointSprite); glDisable(GL_POINT_SMOOTH); }
 
@@ -436,6 +447,7 @@ void Renderer::drawScene(const IMpmObject& mpmObject, const SdfInstance& obstacl
     timer.begin("Lighting");
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, fbWidth, fbHeight);
+    glEnable(GL_DEPTH_TEST); // SSAO disables depth testing for its fullscreen passes.
     glDepthFunc(GL_ALWAYS);	// G-buffer の深度をそのまま画面の深度バッファへ書く
     glUseProgram(lightingProgram);
     glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, gbuffer.colorTexture(0));

@@ -25,7 +25,7 @@
 #include "RenderTarget.h"
 
 struct RenderSettings;
-struct IMpmObject;
+class IMpmObject;
 
 class SplatSurface {
 public:

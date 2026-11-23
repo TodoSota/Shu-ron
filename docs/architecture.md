@@ -6,11 +6,13 @@
 
 | ファイル | 役割 |
 |---|---|
-| [main.cpp](../src/main.cpp) | 初期化、方式選択、メインループ、UI、再起動、CSV保存 |
+| [main.cpp](../src/main.cpp) | ウィンドウ・GL・ImGuiの初期化、方式入力、メインループ、描画とUI、CSV保存 |
+| [SimulationSetup.h](../src/SimulationSetup.h) / [SimulationSetup.cpp](../src/SimulationSetup.cpp) | `SimulationSettings` と `SimulationResources` の定義、物理既定値、GPU上限検査、候補生成 |
+| [SimulationRun.h](../src/SimulationRun.h) / [SimulationRun.cpp](../src/SimulationRun.cpp) | `SimulationRun` による実行制御、診断時の障害物・操作復元、履歴・粉塵・FPSの更新、再起動 |
 | [core/Window.h](../src/core/Window.h) | GLFWウィンドウ、OpenGL初期化、入力取得、画面更新 |
 | [core/Camera.h](../src/core/Camera.h) | 視点、投影・ビュー行列、カメラ操作 |
-| [core/shader.cpp](../src/core/shader.cpp) | GLSLの読込と相対include展開、コンパイル、リンク |
-| [core/errorcheck.cpp](../src/core/errorcheck.cpp) | OpenGLエラーの確認 |
+| [core/Shader.cpp](../src/core/Shader.cpp) | GLSLの読込と相対include展開、コンパイル、リンク |
+| [core/Errorcheck.cpp](../src/core/Errorcheck.cpp) | OpenGLエラーの確認 |
 | [controller/InteractionController.cpp](../src/controller/InteractionController.cpp) | Shoot・Swing、軌道プレビュー、操作の再実行 |
 | [core/MeshResource.h](../src/core/MeshResource.h) | OBJの読込、描画用メッシュとSDFの生成・保持 |
 | [sdf/SDFInstance.h](../src/sdf/SDFInstance.h) | 障害物ごとの姿勢・速度・変換行列と履歴用スナップショット |

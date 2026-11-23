@@ -24,6 +24,12 @@
     <ClCompile Include="src\main.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
+    <ClCompile Include="src\SimulationSetup.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="src\SimulationRun.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
     <ClCompile Include="src\core\Errorcheck.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
@@ -81,15 +87,21 @@
     <ClCompile Include="src\mpm\TimelineManager.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
-    <ClCompile Include="src\mpm\MpmEvaluator.h">
+    <ClInclude Include="src\mpm\MpmEvaluator.h">
       <Filter>ソース ファイル</Filter>
-    </ClCompile>
+    </ClInclude>
+    <ClInclude Include="src\SimulationSetup.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="src\SimulationRun.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
     <ClCompile Include="src\mpm\MpmEvaluator.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
-    <ClCompile Include="src\mpm\MpmParticle.h">
+    <ClInclude Include="src\mpm\MpmParticle.h">
       <Filter>ヘッダー ファイル</Filter>
-    </ClCompile>
+    </ClInclude>
     <ClCompile Include="src\mpm\ssbo\MpmObjectSSBO.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
@@ -213,6 +225,7 @@
     <None Include="src\mpm\shaders\3dtexture\mpm_g2p_3dtex.comp" />
     <None Include="src\mpm\shaders\3dtexture\mpm_g2p_Linear_3dtex.comp" />
     <None Include="src\mpm\shaders\3dtexture\mpm_grid_3dtex.comp" />
+    <None Include="src\mpm\shaders\common\static_contact.glsl" />
     <None Include="src\mpm\shaders\3dtexture\mpm_p2g_3dtex.comp" />
     <None Include="src\mpm\shaders\3dtexture\mpm_p2g_Linear_3dtex.comp" />
     <None Include="src\mpm\shaders\3dtexture\mpm_setup_3dtex.comp" />
@@ -242,7 +255,7 @@
     <ClInclude Include="src\core\Camera.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
-    <ClInclude Include="src\sdf\SdfInstance.h">
+    <ClInclude Include="src\sdf\SDFInstance.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
     <ClInclude Include="src\core\MeshResource.h">

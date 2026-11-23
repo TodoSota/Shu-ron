@@ -3,9 +3,9 @@
 #include <memory>
 #include <GLM/gtc/type_ptr.hpp>
 
-#include "MpmSimulatorSSBO.h"
+#include "MpMSimulatorSSBO.h"
 #include "MpmObjectSSBO.h"
-#include "../../sdf/SdfInstance.h"
+#include "../../sdf/SDFInstance.h"
 #include "../../core/Shader.h"
 
 /// コンストラクタ
@@ -128,5 +128,6 @@ void MpmSimulatorSSBO::step(const SdfInstance& obstacle) {
     mpmObject->swapBuffers();
 
     stepCount++;
-    evaluator.evaluateStep(writeVbo, particleCount, stepCount);
+    simulationTime += requestedPhysics.timestep;
+    evaluator.evaluateStep(writeVbo, particleCount, stepCount, worldScale, simulationTime, requestedPhysics);
 }

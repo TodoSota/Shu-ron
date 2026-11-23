@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include "MpmPhysics.h"
 
 // --- Evaluator の機能制御オプション ---
 struct EvaluatorOptions {
@@ -33,9 +34,9 @@ struct MpmEvalResult {
     GLuint oobCount;                // oob : Out of Bounds
     GLuint maxVelocityBits_GPU;     // GPU 内での速度表現
 
-    // AABB用（スケール済み）
-    int minPosX, minPosY, minPosZ;
-    int maxPosX, maxPosY, maxPosZ;
+    // AABB用（非負floatのビット表現）
+    GLuint minPosX, minPosY, minPosZ;
+    GLuint maxPosX, maxPosY, maxPosZ;
 
     GLuint padding[3];
 };
@@ -45,12 +46,16 @@ struct RepParticleLog {
     int index;
     glm::vec3 position;
     float velocityNorm;
-    float deltaQ;
+    float q;
     int state;
 };
 
 // --- 毎フレームの性能ログ ---
 struct PerformanceLog {
+    double simulationTime;
+    float timestep;
+    float floorHeight;
+    glm::vec3 floorNormal;
     int stepFrame;              // シミュレーションのステップ数
     double timeSetup;
     double timeP2G;
@@ -68,6 +73,11 @@ struct FpsLog {
 
 // --- 詳細評価ログ（インターバルごと） ---
 struct DetailLog {
+    bool hasState;
+    double simulationTime;
+    float timestep;
+    float floorHeight;
+    glm::vec3 floorNormal;
     int stepFrame;          // シミュレーションのステップ数
     unsigned int totalParticleCount;// 評価対象の全粒子数
     unsigned int validCount;// 正常な粒子数
@@ -105,6 +115,8 @@ private:
 public:
     MpmEvaluator();
     ~MpmEvaluator();
+    MpmEvaluator(const MpmEvaluator&) = delete;
+    MpmEvaluator& operator=(const MpmEvaluator&) = delete;
 
     // --- オプション制御 ---
     void setOptions(const EvaluatorOptions& newOptions) { options = newOptions; }
@@ -119,6 +131,7 @@ public:
 
     // 全記録ログのリセット
     void clearLogs();
+    void discardStepsAfter(int stepCount);
 
     // --- 計算時間計測タイマー ---
     void beginTimer(const std::string& passName);
@@ -128,11 +141,12 @@ public:
     /// @param [in] particleVbo     粒子の VBO
     /// @param [in] particleCount   定義されている全粒子数
     /// @param [in] stepCount       現在のシミュレーションのステップ数
-    void evaluateStep(GLuint particleVbo, int particleCount, int stepCount);
+    void evaluateStep(GLuint particleVbo, int particleCount, int stepCount, float worldScale, double simulationTime, const MpmPhysics& physics);
 
     /// CSVへの書き出し
     /// @param [in] perfFilepath   性能の書き出し先 
     /// @param [in] detailFilepath 詳細の書き出し先
     /// @param [in] fpsFilepath    速度の書き出し先
-    void saveLogToCSV(const std::string& perfFilepath, const std::string& detailFilepath, const std::string& fpsFilepath) const;
+    // 空文字列は保存成功。それ以外はUIに出すエラー。
+    std::string saveLogToCSV(const std::string& perfFilepath, const std::string& detailFilepath, const std::string& fpsFilepath) const;
 };

@@ -137,7 +137,7 @@ def main():
     (dest/'probe.cpp').write_text(SOURCE, encoding='utf-8')
     (dest/'bad.comp').write_text('#version 430 core\n#include "bad.glsl"\nvoid main() {}\n')
     (dest/'bad.glsl').write_text('int invalid = ;\n')
-    sources = [ROOT/'src/core/shader.cpp', ROOT/'src/mpm/TimelineManager.cpp']
+    sources = [ROOT/'src/core/Shader.cpp', ROOT/'src/mpm/TimelineManager.cpp']
     compile_args = 'probe.cpp /DGLM_ENABLE_EXPERIMENTAL ' + ' '.join(f'"{src}"' for src in sources)
     command = args.build_template.read_text(encoding='utf-8').replace('probe.cpp /Fe:',compile_args+' /Fe:')
     (dest/'build.cmd').write_text(command,encoding='utf-8')

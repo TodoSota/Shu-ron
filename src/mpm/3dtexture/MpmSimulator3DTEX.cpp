@@ -5,7 +5,7 @@
 
 #include "MpmSimulator3DTEX.h"
 #include "MpmObject3DTEX.h"
-#include "../../sdf/SdfInstance.h"
+#include "../../sdf/SDFInstance.h"
 #include "../../core/Shader.h"
 
 
@@ -125,6 +125,7 @@ void MpmSimulator3DTEX::step(const SdfInstance& obstacle) {
 
     // シミュレーション評価実行
     stepCount++;    // シミュレーション評価のステップを進める
-    evaluator.evaluateStep(writeVbo, particleCount, stepCount);
+    simulationTime += requestedPhysics.timestep;
+    evaluator.evaluateStep(writeVbo, particleCount, stepCount, worldScale, simulationTime, requestedPhysics);
 
 }

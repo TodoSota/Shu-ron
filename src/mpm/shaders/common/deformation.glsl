@@ -30,36 +30,21 @@ void jacobiEigen(inout mat3 S, out mat3 V) {
     }
 }
 
-//------------------------------------------------------------------------------
-// 3×3 行列の特異値分解 F = U Σ Vᵀ
-//   目的: 変形勾配 F を「回転 U・主ストレッチ Σ・回転 V」に分け、
-//         主ひずみ空間 (対角成分だけ) で構成則を評価できるようにする。
-//   方法: FᵀF = V Σ² Vᵀ を Jacobi 法で求め、Σ = sqrt(固有値)、U = F V Σ⁻¹ とする。
-//   注意: ・Σ は sqrt(max(λ, 1e-4)) により 0.01 以上に下限が設けられている
-//           (極端な圧縮で Σ⁻¹ が発散するのを防ぐためのクランプであり、
-//            「微小値を足す」処理ではない)。
-//         ・det F < 0 (要素の反転) のときに U が反射を含むことへの対処はない。
-//         ・特異値の大小の並べ替えは行わない (等方な構成則なので順序は不要)。
-//------------------------------------------------------------------------------
-// 特異値分解
+// Constitutive logarithms retain the historical minimum stretch. The SVD
+// itself uses the measured lengths so clamping cannot de-normalize U.
+const float minMaterialStretch = 0.01;
+
 void svd(mat3 F, out mat3 U, out mat3 Sigma, out mat3 V) {
     mat3 S = transpose(F) * F;
-
     jacobiEigen(S, V);
 
+    mat3 FV = F * V;
     Sigma = mat3(0.0);
-	// ゼロ除算の恐れがあるので、微小な値を足す(エプシロン)
-    Sigma[0][0] = sqrt(max(S[0][0], 1e-4));
-    Sigma[1][1] = sqrt(max(S[1][1], 1e-4));
-    Sigma[2][2] = sqrt(max(S[2][2], 1e-4));
-
-    mat3 invSigma = mat3(0.0);
-
-	invSigma[0][0] = 1.0 / Sigma[0][0];
-	invSigma[1][1] = 1.0 / Sigma[1][1];
-	invSigma[2][2] = 1.0 / Sigma[2][2];
-
-    U = F * V * invSigma;
+    for (int axis = 0; axis < 3; ++axis) {
+        float stretch = length(FV[axis]);
+        Sigma[axis][axis] = stretch;
+        U[axis] = FV[axis] / max(stretch, 1e-20);
+    }
 }
 
 

@@ -28,6 +28,7 @@ protected:
     MpmEvaluator evaluator;
     float worldScale;
     int stepCount{ 0 };
+    double simulationTime{ 0 };
     // Keep the caller's material density when switching particle geometry.
     MpmPhysics requestedPhysics{};
     bool hasPhysics{ false };
@@ -85,6 +86,11 @@ public:
     // --- 共通ゲッター ---
     const IMpmObject& getMpmObject() const { return *mpmObject; }
     MpmEvaluator& getEvaluator() { return evaluator; }
+    double getSimulationTime() const { return simulationTime; }
+    void restoreSimulationClock(int step, double time) {
+        stepCount = step;
+        simulationTime = time;
+    }
     int getStepCount() const { return stepCount; }
     const std::string& getSimulationError() const { return simulationError; }
 };

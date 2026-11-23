@@ -16,7 +16,7 @@
 #include <GLM/glm.hpp>
 
 struct RenderSettings;
-struct IMpmObject;
+class IMpmObject;
 struct MpmPhysics;
 
 class DustSystem {

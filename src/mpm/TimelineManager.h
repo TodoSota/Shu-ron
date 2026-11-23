@@ -11,7 +11,16 @@
 #include <GLM/gtc/quaternion.hpp>
 #include <vector>
 #include <cassert>
-#include "../sdf/SdfInstance.h"
+#include "../sdf/SDFInstance.h"
+#include "../controller/InteractionController.h"
+#include "MpmPhysics.h"
+
+struct TimelineState {
+    MpmPhysics physics{};
+    InteractionController controller;
+    int step = 0;
+    double time = 0;
+};
 
 /// @brief MPMシミュレーションの状態を時系列で記録・復元するタイムライン管理クラス
 /// @note 物理フレーム : リングバッファにおける最新/最古とされる具体的な場所
@@ -31,6 +40,7 @@ private:
     GLuint recordProgram{ 0 };
     GLint writeOffsetLoc{ -1 };
     GLuint historyVbo{ 0 };                      // GPU 上での記録媒体
+    std::vector<TimelineState> stateHistory;
     std::vector<SdfSnapshot> sdfHistory;    // CPU 上での記録媒体
 
     /// 論理フレーム番号を物理インデックスに変換
@@ -48,10 +58,14 @@ public:
     /// @param [in] sdfCount 存在するオブジェクト
     TimelineManager(int requestedFrames, int particleCount, int sdfCount = 1);
     ~TimelineManager();
+    TimelineManager(const TimelineManager&) = delete;
+    TimelineManager& operator=(const TimelineManager&) = delete;
 
 
-    void recordFrame(GLuint sourceVbo, const SdfInstance* sdfs);
-    void restoreToFrame(int logicalFrame, GLuint targetVbo, SdfInstance* sdfs);
+    void recordFrame(GLuint sourceVbo, const SdfInstance* sdfs, const TimelineState& state = {});
+    void restoreToFrame(int logicalFrame, GLuint targetVbo, SdfInstance* sdfs, TimelineState* state = nullptr);
+    void clear() { currentFrameCount = headIndex = playbackFrame = 0; }
+    void discardFuture();
 
     // ゲッター / セッター
     int getCapacity() const { return maxFrames; }

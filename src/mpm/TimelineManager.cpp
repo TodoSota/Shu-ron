@@ -30,6 +30,7 @@ TimelineManager::TimelineManager(int requestedFrames, int particleCount, int sdf
     int frames = (std::min)(requestedFrames, static_cast<int>(maxBytes / frameStride));
     if (frames <= 0) return;
 
+    stateHistory.resize(frames);
     sdfHistory.resize(static_cast<size_t>(frames) * sdfCount);
     recordProgram = loadCompute("src/mpm/shaders/timeline_record.comp");
     if (recordProgram == 0) return;
@@ -64,7 +65,7 @@ TimelineManager::~TimelineManager() {
 /// 1フレーム分のシミュレーションの状態を記録
 /// @param [in] sourceVbo シミュレーションで使用している粒子のVBO
 /// @param [in] sdfs シミュレーションで使用しているSDFオブジェクト
-void TimelineManager::recordFrame(GLuint sourceVbo, const SdfInstance* sdfs) {
+void TimelineManager::recordFrame(GLuint sourceVbo, const SdfInstance* sdfs, const TimelineState& state) {
     if (maxFrames == 0) return;
     assert(sdfs != nullptr);
 
@@ -82,6 +83,8 @@ void TimelineManager::recordFrame(GLuint sourceVbo, const SdfInstance* sdfs) {
     // バインドの解除
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, 0);  // 計算用の VBO
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, 0); // 結果用の VBO
+
+    stateHistory[headIndex] = state;
 
     // SDF状態の記録
     for (int i = 0; i < sdfCount; ++i) {
@@ -103,12 +106,14 @@ void TimelineManager::recordFrame(GLuint sourceVbo, const SdfInstance* sdfs) {
 /// @param [in] logicalFrame 論理フレーム
 /// @param [in] targetVbo 書き込み先となるシミュレーションで使用している粒子のVBO
 /// @param [in] sdfs シミュレーションで使用しているSDFオブジェクト
-void TimelineManager::restoreToFrame(int logicalFrame, GLuint targetVbo, SdfInstance* sdfs) {
+void TimelineManager::restoreToFrame(int logicalFrame, GLuint targetVbo, SdfInstance* sdfs, TimelineState* state) {
     if (maxFrames == 0) return;
     assert(sdfs != nullptr);
     assert(logicalFrame >= 0 && logicalFrame < currentFrameCount);
 
     int physicalIndex = logicalToPhysicalFrame(logicalFrame);
+
+    if (state) *state = stateHistory[physicalIndex];
 
     // オフセット計算を size_t で
     size_t readOffset = static_cast<size_t>(physicalIndex) * frameStride;
@@ -134,4 +139,9 @@ void TimelineManager::restoreToFrame(int logicalFrame, GLuint targetVbo, SdfInst
         int index = physicalIndex * sdfCount + i;
         sdfs[i].restoreSnapshot(sdfHistory[index]);
     }
+}
+void TimelineManager::discardFuture() {
+    if (currentFrameCount == 0 || playbackFrame == currentFrameCount - 1) return;
+    headIndex = (logicalToPhysicalFrame(playbackFrame) + 1) % maxFrames;
+    currentFrameCount = playbackFrame + 1;
 }

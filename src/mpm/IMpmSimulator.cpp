@@ -1,4 +1,4 @@
-#include "../sdf/SdfInstance.h"
+#include "../sdf/SDFInstance.h"
 #include <fstream>
 #include <chrono>
 #include <direct.h>
@@ -207,6 +207,7 @@ void IMpmSimulator::resetParticles(float scale, bool sphere) {
 
     // 評価クラスの内部ログのクリア
     stepCount = 0;
+    simulationTime = 0;
     simulationError.clear();
     sphereParticles = sphere;
     sphereParticleVolume = count > 0 ? (4.0f / 3.0f) * 3.14159265358979f

@@ -7,7 +7,11 @@
 #include "../core/Errorcheck.h"
 #include <iostream>
 #include <fstream>
-#include <cmath>
+#include <algorithm>
+#include <filesystem>
+#include <iomanip>
+#include <limits>
+#include <locale>
 
 // コンストラクタ
 MpmEvaluator::MpmEvaluator() {
@@ -60,6 +64,12 @@ void MpmEvaluator::clearLogs() {
 
 // --- 計測用タイマー ---
 // タイマーの開始をセット
+void MpmEvaluator::discardStepsAfter(int stepCount) {
+    const auto later = [stepCount](const auto& row) { return row.stepFrame > stepCount; };
+    perfLogs.erase(std::remove_if(perfLogs.begin(), perfLogs.end(), later), perfLogs.end());
+    detailLogs.erase(std::remove_if(detailLogs.begin(), detailLogs.end(), later), detailLogs.end());
+}
+
 void MpmEvaluator::beginTimer(const std::string& passName) {
     if (!options.enableGpuTimer) return;
 
@@ -81,22 +91,26 @@ void MpmEvaluator::endTimer(const std::string& passName) {
 /// @param [in] paticleVbo      粒子の VBO
 /// @param [in] particleCount   定義されている全粒子数
 /// @param [in] stepCount       現在のシミュレーションのステップ数
-void MpmEvaluator::evaluateStep(GLuint particleVbo, int particleCount, int stepCount) {
+void MpmEvaluator::evaluateStep(GLuint particleVbo, int particleCount, int stepCount, float worldScale, double simulationTime, const MpmPhysics& physics) {
     // パフォーマンスログの回収（タイマー結果の取得）
     // 本来はパイプラインストールを防ぐため次フレームで取得すべきだが、確実性重視で同期取得
     PerformanceLog pLog;
     pLog.stepFrame = stepCount;
+    pLog.simulationTime = simulationTime;
+    pLog.timestep = physics.timestep;
+    pLog.floorHeight = physics.f_height;
+    pLog.floorNormal = physics.f_normal;
     pLog.timeSetup = 0.0;
     pLog.timeP2G = 0.0;
     pLog.timeGrid = 0.0;
     pLog.timeG2P = 0.0;
     pLog.timeComputeTotal = 0.0;
 
-    if (options.enableGpuTimerReadback) {
+    if (options.enableGpuTimer && options.enableGpuTimerReadback) {
         auto getTimerMs = [&](const std::string& name) -> double {
             if (timerQueries.find(name) == timerQueries.end()) return 0.0;
             GLuint64 elapsed = 0;
-            glGetQueryObjectui64v(timerQueries[name], GL_QUERY_RESULT, &elapsed);
+            glGetQueryObjectui64v(timerQueries.at(name), GL_QUERY_RESULT, &elapsed);
             return elapsed / 1000000.0; // ナノ秒からミリ秒へ変換
         };
 
@@ -106,46 +120,42 @@ void MpmEvaluator::evaluateStep(GLuint particleVbo, int particleCount, int stepC
         pLog.timeG2P = getTimerMs("G2P");
         pLog.timeComputeTotal = pLog.timeSetup + pLog.timeP2G + pLog.timeGrid + pLog.timeG2P;
 
-        // タイマー計測自体が ON なら記録 / OFF なら 0 で記録される
-        if (options.enableGpuTimer) {
-            perfLogs.push_back(pLog);
-        }
+        perfLogs.push_back(pLog);
     }
 
     // 詳細評価（指定インターバルごと）
-    if (stepCount % options.stateEvaluationInterval == 0) {
-        // --- GPU側のSSBOを初期化 ---
-        MpmEvalResult zeroData = { 0 };
-        zeroData.minPosX = zeroData.minPosY = zeroData.minPosZ = 2147483647;  // int の MAX
-        zeroData.maxPosX = zeroData.maxPosY = zeroData.maxPosZ = -2147483647; // int の MIN
+    if (stepCount % std::clamp(options.stateEvaluationInterval, 1, 100) == 0) {
+        const bool evaluateState = options.enableStateEvaluation && evalProgram != 0 && particleCount > 0;
+        const bool readState = evaluateState && options.enableStateReadback;
+        if (!evaluateState && !options.enableRepParticleReadback) return;
 
-        // Comp Shader による状態評価実行
-        if (options.enableStateEvaluation) {
+        MpmEvalResult result{};
+        if (evaluateState) {
+            result.minPosX = result.minPosY = result.minPosZ = (std::numeric_limits<GLuint>::max)();
+            glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
             glBindBuffer(GL_SHADER_STORAGE_BUFFER, evalSsbo);
-            glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(MpmEvalResult), &zeroData);
+            glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(result), &result);
 
-            // --- 評価シェーダーのディスパッチ ---
             glUseProgram(evalProgram);
+            glUniform1f(glGetUniformLocation(evalProgram, "worldScale"), worldScale);
+            glUniform1ui(glGetUniformLocation(evalProgram, "particleCount"), particleCount);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particleVbo);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, evalSsbo);
+            glDispatchCompute((particleCount + 63) / 64, 1, 1);
 
-            int numGroups = (particleCount + 63) / 64;
-            glDispatchCompute(numGroups, 1, 1);
-
-            // GPUの書き込み完了を待機
-            glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+            if (readState) {
+                glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+                glBindBuffer(GL_SHADER_STORAGE_BUFFER, evalSsbo);
+                glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(result), &result);
+            }
         }
+        if (!readState && !options.enableRepParticleReadback) return;
 
-        // --- 結果の読み出し (SSBO) ---
-        MpmEvalResult result = zeroData;
-        if (options.enableStateReadback) {
-            glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(MpmEvalResult), &result);
-        }
-        
         // --- 代表粒子の読み出し (VBOから直接) ---
         // ※ 読みだしで同期が発生、それが粒子数分繰り返すので性能に注意
         std::vector<RepParticleLog> reps;
         if (options.enableRepParticleReadback) {
+            glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
             glBindBuffer(GL_ARRAY_BUFFER, particleVbo);
             for (int idx : repParticleIndices) {
                 if (idx < 0 || idx >= particleCount) {
@@ -160,7 +170,7 @@ void MpmEvaluator::evaluateStep(GLuint particleVbo, int particleCount, int stepC
                 repLog.index = idx;
                 repLog.position = glm::vec3(p.position);
                 repLog.velocityNorm = glm::length(glm::vec3(p.velocity));
-                repLog.deltaQ = p.q;
+                repLog.q = p.q;
                 repLog.state = p.state;
                 reps.push_back(repLog);
             }
@@ -168,8 +178,13 @@ void MpmEvaluator::evaluateStep(GLuint particleVbo, int particleCount, int stepC
         }
 
         // --- 詳細ログの構築 ---
-        DetailLog dLog;
+        DetailLog dLog{};
+        dLog.hasState = readState;
         dLog.stepFrame = stepCount;
+        dLog.simulationTime = simulationTime;
+        dLog.timestep = physics.timestep;
+        dLog.floorHeight = physics.f_height;
+        dLog.floorNormal = physics.f_normal;
         dLog.totalParticleCount = particleCount;
         dLog.validCount = result.validParticleCount;
         dLog.aliveRatio = (particleCount > 0) ? (static_cast<double>(result.validParticleCount) / particleCount) : 0.0;
@@ -179,91 +194,102 @@ void MpmEvaluator::evaluateStep(GLuint particleVbo, int particleCount, int stepC
         dLog.maxVelocity = glm::uintBitsToFloat(result.maxVelocityBits_GPU);
         dLog.repParticles = std::move(reps);
 
-        // 固定小数点からの復元 (SCALE = 100.0)
-        double scale = 100.0;
-        if (result.validParticleCount > 0) {
-            dLog.aabbMin = glm::vec3(result.minPosX / scale, result.minPosY / scale, result.minPosZ / scale);
-            dLog.aabbMax = glm::vec3(result.maxPosX / scale, result.maxPosY / scale, result.maxPosZ / scale);
+        if (readState && result.validParticleCount > 0) {
+            dLog.aabbMin = glm::uintBitsToFloat(glm::uvec3(result.minPosX, result.minPosY, result.minPosZ));
+            dLog.aabbMax = glm::uintBitsToFloat(glm::uvec3(result.maxPosX, result.maxPosY, result.maxPosZ));
             dLog.aabbExtent = dLog.aabbMax - dLog.aabbMin;
         }
-        else {
-            dLog.aabbMin = glm::vec3(0.0f);
-            dLog.aabbMax = glm::vec3(0.0f);
-            dLog.aabbExtent = glm::vec3(0.0f);
-        }
-
-        // いずれかの評価ログフラグが立っている場合のみ保存
-        if (options.enableStateEvaluation || options.enableRepParticleReadback) {
-            detailLogs.push_back(dLog);
-        }
+        detailLogs.push_back(std::move(dLog));
     }
 }
 
-/// CSVへの書き出し
-/// @param [in] perfFilepath   性能の書き出し先 
-/// @param [in] detailFilepath 詳細の書き出し先
-/// @param [in] fpsFilepath    速度の書き出し先
-void MpmEvaluator::saveLogToCSV(const std::string& perfFilepath, const std::string& detailFilepath, const std::string& fpsFilepath) const {
-    std::cout << "Evaluation logs saved to ";
+std::string MpmEvaluator::saveLogToCSV(const std::string& perfFilepath, const std::string& detailFilepath, const std::string& fpsFilepath) const {
+    if (perfLogs.empty() && detailLogs.empty() && fpsLogs.empty()) return "No log data to save.";
 
-    // パフォーマンスログ出力
-    if (options.enableGpuTimerReadback) {
-        std::ofstream perfFile(perfFilepath);
-        if (perfFile.is_open()) {
-            perfFile << "Frame,Setup(ms),P2G(ms),Grid(ms),G2P(ms),ComputeTotal(ms)\n";
-            for (const auto& p : perfLogs) {
-                perfFile << p.stepFrame << "," << p.timeSetup << "," << p.timeP2G << ","
-                    << p.timeGrid << "," << p.timeG2P << "," << p.timeComputeTotal << "\n";
-            }
-        }
-        std::cout << perfFilepath << " , ";
+    for (const auto* path : { perfLogs.empty() ? nullptr : &perfFilepath,
+                             detailLogs.empty() ? nullptr : &detailFilepath,
+                             fpsLogs.empty() ? nullptr : &fpsFilepath }) {
+        if (!path) continue;
+        std::error_code error;
+        if (std::filesystem::exists(*path, error)) return "Log already exists: " + *path;
+        if (error) return "Cannot check log path: " + *path;
     }
 
-    // 詳細ログ出力
-    if (options.enableStateReadback) {
-        std::ofstream detailFile(detailFilepath);
-        if (detailFile.is_open()) {
-            // ヘッダー作成
-            detailFile << "StepFrame,TotalCount,ValidCount,AliveRatio,NaN_Pos,NaN_Vel,OOB,MaxVel,"
-                << "ExtentX,ExtentY,ExtentZ,"
-                << "AABB_MinX,AABB_MinY,AABB_MinZ,AABB_MaxX,AABB_MaxY,AABB_MaxZ";
+    auto openCsv = [](const std::string& path) {
+        std::ofstream file(path);
+        file.imbue(std::locale::classic());
+        file << std::setprecision(std::numeric_limits<double>::max_digits10);
+        return file;
+    };
 
-            for (size_t i = 0; i < repParticleIndices.size(); i++) {
-                std::string prefix = ",Rep" + std::to_string(repParticleIndices[i]) + "_";
-                detailFile << prefix << "PosX" << prefix << "PosY" << prefix << "PosZ"
-                    << prefix << "Vel" << prefix << "State" << prefix << "Q";
+    if (!perfLogs.empty()) {
+        auto file = openCsv(perfFilepath);
+        file << "Step,SimulationTime(s),Dt(s),FloorHeight(m),FloorNormalX,FloorNormalY,FloorNormalZ,Setup(ms),P2G(ms),Grid(ms),G2P(ms),ComputeTotal(ms)\n";
+        for (const auto& p : perfLogs) {
+            file << p.stepFrame << "," << p.simulationTime << "," << p.timestep << "," << p.floorHeight
+                << "," << p.floorNormal.x << "," << p.floorNormal.y << "," << p.floorNormal.z
+                << "," << p.timeSetup << "," << p.timeP2G << ","
+                << p.timeGrid << "," << p.timeG2P << "," << p.timeComputeTotal << "\n";
+        }
+        file.close();
+        if (!file) return "Cannot write log: " + perfFilepath;
+    }
+
+    if (!detailLogs.empty()) {
+        auto file = openCsv(detailFilepath);
+        file << "Step,SimulationTime(s),Dt(s),FloorHeight(m),FloorNormalX,FloorNormalY,FloorNormalZ,TotalCount,ValidCount,AliveRatio,NonFinitePos,NonFiniteVel,OOB,MaxVel(m/s),"
+            << "ExtentX(m),ExtentY(m),ExtentZ(m),"
+            << "AABB_MinX(m),AABB_MinY(m),AABB_MinZ(m),AABB_MaxX(m),AABB_MaxY(m),AABB_MaxZ(m)";
+        for (int index : repParticleIndices) {
+            const std::string prefix = ",Rep" + std::to_string(index) + "_";
+            file << prefix << "PosX(m)" << prefix << "PosY(m)" << prefix << "PosZ(m)"
+                << prefix << "Vel(m/s)" << prefix << "State" << prefix << "Q";
+        }
+        file << "\n";
+
+        for (const auto& d : detailLogs) {
+            file << d.stepFrame << "," << d.simulationTime << "," << d.timestep << "," << d.floorHeight
+                << "," << d.floorNormal.x << "," << d.floorNormal.y << "," << d.floorNormal.z
+                << "," << d.totalParticleCount;
+            if (d.hasState) {
+                file << "," << d.validCount << "," << d.aliveRatio << ","
+                    << d.nanPosCount << "," << d.nanVelCount << "," << d.oobCount;
+            } else {
+                file << ",,,,,";
             }
-            detailFile << "\n";
+            if (d.hasState && d.validCount > 0) {
+                file << "," << d.maxVelocity << "," << d.aabbExtent.x << "," << d.aabbExtent.y << ","
+                    << d.aabbExtent.z << "," << d.aabbMin.x << "," << d.aabbMin.y << "," << d.aabbMin.z
+                    << "," << d.aabbMax.x << "," << d.aabbMax.y << "," << d.aabbMax.z;
+            } else {
+                file << ",,,,,,,,,,";
+            }
 
-            // データ書き込み
-            for (const auto& d : detailLogs) {
-                detailFile << d.stepFrame << "," << d.totalParticleCount << "," << d.validCount << "," << d.aliveRatio << ","
-                    << d.nanPosCount << "," << d.nanVelCount << "," << d.oobCount << "," << d.maxVelocity << ","
-                    << d.aabbExtent.x << "," << d.aabbExtent.y << "," << d.aabbExtent.z << ","
-                    << d.aabbMin.x << "," << d.aabbMin.y << "," << d.aabbMin.z << ","
-                    << d.aabbMax.x << "," << d.aabbMax.y << "," << d.aabbMax.z;
-
-                for (const auto& rep : d.repParticles) {
-                    detailFile << "," << rep.position.x << "," << rep.position.y << "," << rep.position.z
-                        << "," << rep.velocityNorm << "," << rep.state << "," << rep.deltaQ;
+            for (int index : repParticleIndices) {
+                auto rep = std::find_if(d.repParticles.begin(), d.repParticles.end(),
+                    [index](const RepParticleLog& value) { return value.index == index; });
+                if (rep != d.repParticles.end()) {
+                    file << "," << rep->position.x << "," << rep->position.y << "," << rep->position.z
+                        << "," << rep->velocityNorm << "," << rep->state << "," << rep->q;
+                } else {
+                    file << ",,,,,,";
                 }
-                detailFile << "\n";
             }
+            file << "\n";
         }
-        std::cout << detailFilepath << " , ";
+        file.close();
+        if (!file) return "Cannot write log: " + detailFilepath;
     }
 
-    // FPS ログ出力
-    if (options.enableFpsLogging) {
-        if (!fpsLogs.empty()) {
-            std::ofstream fpsFile(fpsFilepath);
-            if (fpsFile.is_open()) {
-                fpsFile << "RenderFrame,Fps,FrameTime(ms)\n";
-                for (const auto& f : fpsLogs) {
-                    fpsFile << f.renderFrame << "," << f.fps << "," << f.frameTimeMs << "\n";
-                }
-            }
+    if (!fpsLogs.empty()) {
+        auto file = openCsv(fpsFilepath);
+        file << "RenderFrame,Fps,FrameTime(ms)\n";
+        for (const auto& f : fpsLogs) {
+            file << f.renderFrame << "," << f.fps << "," << f.frameTimeMs << "\n";
         }
-        std::cout << fpsFilepath << std::endl;
+        file.close();
+        if (!file) return "Cannot write log: " + fpsFilepath;
     }
+
+    return {};
 }

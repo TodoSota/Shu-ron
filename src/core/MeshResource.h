@@ -14,6 +14,7 @@
 #include <GLM/glm.hpp>
 #include <vector>
 #include <string>
+#include <filesystem>
 #include <iostream>
 #include <cmath>
 #include <array>
@@ -152,6 +153,9 @@ public:
     }
 
     /// デストラクタ
+    MeshResource(const MeshResource&) = delete;
+    MeshResource& operator=(const MeshResource&) = delete;
+
     ~MeshResource() {
         glDeleteVertexArrays(1, &vao);
         glDeleteBuffers(1, &vbo);
@@ -222,7 +226,9 @@ private:
 
         // 読み込みエラー処理
         std::string warn, err;
-        bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filepath.c_str());
+        const auto materialDirectory = std::filesystem::path(filepath).parent_path().string();
+        bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filepath.c_str(),
+            materialDirectory.empty() ? nullptr : materialDirectory.c_str());
         if (!warn.empty()) std::cout << "OBJ Warn: " << warn << std::endl;
         if (!err.empty()) std::cerr << "OBJ Error: " << err << std::endl;
         if (!ret) return false;

@@ -134,9 +134,9 @@ void main() {
 
 	// ひずみ空間での処理
 	float epsilon[3];
-	epsilon[0] = log(max(sig[0][0], 1e-6));
-	epsilon[1] = log(max(sig[1][1], 1e-6));
-	epsilon[2] = log(max(sig[2][2], 1e-6));
+	epsilon[0] = log(max(sig[0][0], minMaterialStretch));
+	epsilon[1] = log(max(sig[1][1], minMaterialStretch));
+	epsilon[2] = log(max(sig[2][2], minMaterialStretch));
 
 	// 体積ひずみ tr(ε) に、これまでの射影で失われた体積 vc を加える
 	// (Tampubolon et al. 2017 の volume correction。繰り返しの射影で砂の体積が増え続けるのを防ぐ)

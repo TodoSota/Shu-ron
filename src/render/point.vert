@@ -33,6 +33,7 @@ out flat int v_material;
 
 void main(){
 	vec4 pos = position;
+	v_material = 0;
 	if(is_floor == 1) {
 		// 床の平面 n·x = h を y について解き、格子状に並べた頂点を平面上に載せる
 		float h = floor_height - (floor_normal.x * pos.x + floor_normal.z * pos.z) / floor_normal.y;
@@ -40,12 +41,11 @@ void main(){
 		v_state = -1;	// 地面用のダミー値
 	} else if(is_floor == 0) {
 		v_state = p[gl_VertexID].state;
+		v_material = p[gl_VertexID].padding[0];
 	} else {
 		v_state = -1;	// 地面用のダミー値
 	}
 
-	// 石と土の色フラグを送る
-	v_material = p[gl_VertexID].padding[0];
 
 	// 頂点の位置をクリッピング座標系に変換
 	gl_Position = mc * pos;

@@ -228,7 +228,7 @@ void SplatSurface::draw(const IMpmObject& mpmObject, const RenderTarget& gbuffer
 	setInt(drawProgram, "useDebugColor", useDebugColor ? 1 : 0);
 
 	const bool compat = isCompatibilityProfile();
-	const GLboolean smoothWasOn = glIsEnabled(GL_POINT_SMOOTH);
+	const bool smoothWasOn = compat && glIsEnabled(GL_POINT_SMOOTH);
 	glEnable(GL_PROGRAM_POINT_SIZE);
 	if (compat) { glEnable(kPointSprite); glDisable(GL_POINT_SMOOTH); }
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mpmObject.getReadVbo());

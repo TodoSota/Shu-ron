@@ -212,14 +212,14 @@ public:
 	/// デコンストラクタ(オブジェクトの破棄時に自動で呼び出される)
 	virtual ~Window() {
 		// ウィンドウを破棄する
-		glfwDestroyWindow(window);
+		if (window) glfwDestroyWindow(window);
 	}
 
 	// 代入演算子は使用しない
 	Window& operator=(const Window& draw) = delete;
 
-	// ムーブ代入演算子はデフォルトのものを使用する
-	Window& operator=(Window&& window) = default;
+	// ウィンドウとコールバックの所有権は移動しない
+	Window& operator=(Window&& window) = delete;
 
 	/// 更新処理
 	auto update() -> void {

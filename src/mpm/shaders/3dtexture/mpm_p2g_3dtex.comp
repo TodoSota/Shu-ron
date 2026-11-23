@@ -160,9 +160,9 @@ void main() {
 	if (invalidDeformation(F, U, sig, V, idx, 1u)) return;
 
 	mat3 e = mat3(0.0);
-	e[0][0] = log( max(sig[0][0], 1e-6) );
-	e[1][1] = log( max(sig[1][1], 1e-6) );
-	e[2][2] = log( max(sig[2][2], 1e-6) );
+	e[0][0] = log( max(sig[0][0], minMaterialStretch) );
+	e[1][1] = log( max(sig[1][1], minMaterialStretch) );
+	e[2][2] = log( max(sig[2][2], minMaterialStretch) );
 	float trace_e = e[0][0] + e[1][1] + e[2][2];
 
 	// Kirchhoff応力 τ=U τ̂ Uᵀ。下のMLS力項へ直接渡すためFᵀは追加しない。

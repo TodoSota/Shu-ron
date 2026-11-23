@@ -33,7 +33,7 @@
 #include "PassTimer.h"
 
 // 前方宣言
-struct IMpmObject;
+class IMpmObject;
 class SdfInstance;
 struct MpmPhysics;
 

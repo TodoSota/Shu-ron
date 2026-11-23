@@ -18,6 +18,10 @@ in flat int v_state;
 in flat int v_material;
 
 void main(){
+	// 点のラスタライズ領域から、円の外側のフラグメントを除く。
+	vec2 offset = gl_PointCoord * 2.0 - 1.0;
+	if (dot(offset, offset) > 1.0) discard;
+
 	if(is_floor == 1) {
 		// 地面を白に設定
 		color = vec4(1.0f, 1.0f, 1.0f, 1.0f);
