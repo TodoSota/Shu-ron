@@ -62,6 +62,13 @@ def exercise(gl, pipe, physics, location, affine):
         fields = np.zeros_like(grid)
         fields[:3][:,indices[0],indices[1],indices[2]] = (weights[:,None]*velocity_field).T
         fields[3][indices] = weights
+        # Adjacent populated cells must not affect the eight-node linear gather.
+        extra_offsets = np.array([offset for offset in np.ndindex(3, 3, 3) if 2 in offset])
+        extra_nodes = index + extra_offsets
+        extra_nodes = extra_nodes[((extra_nodes >= 0) & (extra_nodes < 128)).all(axis=1)]
+        extra_indices = tuple(extra_nodes.T[::-1])
+        fields[:3][:,extra_indices[0],extra_indices[1],extra_indices[2]] = [[3.0], [-5.0], [7.0]]
+        fields[3][extra_indices] = 1.0
         pipe.upload_grid(fields)
         gl.dispatch(pipe.programs[3],1)
         gl.MemoryBarrier(0x200)

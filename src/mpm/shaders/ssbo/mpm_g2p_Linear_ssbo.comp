@@ -87,9 +87,10 @@ void main() {
 	vec3 new_v = vec3(0.0);
 	mat3 new_C = mat3(0.0);
 
-	for (int i = 0; i < 3; i++) {
-		for (int j = 0; j < 3; j++) {
-			for (int k = 0; k < 3; k++) {
+	// Linear G2P gathers the same 2x2x2 stencil as P2G.
+	for (int i = 0; i < w.length(); i++) {
+		for (int j = 0; j < w.length(); j++) {
+			for (int k = 0; k < w.length(); k++) {
 				ivec3 coords = base + ivec3(i, j, k);
 				if (any(lessThan(coords, ivec3(0))) || any(greaterThanEqual(coords, ivec3(u_gridSize)))) {
 					continue; // 範囲外のノードへの加算をスキップ
